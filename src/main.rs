@@ -1,71 +1,55 @@
+#[macro_use]
+extern crate log;
+
+use anyhow::anyhow;
 use anyhow::Result;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
-use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use pico_args::Arguments;
+use simplelog::Config;
+use simplelog::LevelFilter;
+use simplelog::WriteLogger;
+use std::fs::File;
+use std::path::PathBuf;
 use std::process::Command;
-use std::thread;
-use std::{io, time::Duration};
-use tui::layout::{Constraint, Direction, Layout};
-use tui::{
-    backend::CrosstermBackend,
-    widgets::{Block, Borders},
-    Terminal,
-};
+
+mod ui;
 
 fn main() -> Result<()> {
     let mut args = Arguments::from_env();
 
     let cli = Cli {
-        exec: args.value_from_str("--exec")?,
+        // exec: args.value_from_str("--exec")?,
+        log: args.opt_value_from_str("--log")?,
     };
 
-    // let _command = Command::new(cli.exec).spawn()?;
-
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    terminal.draw(|f| {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(20),
-                ]
-                .as_ref(),
-            )
-            .split(f.size());
-        let block = Block::default().title("Variables").borders(Borders::ALL);
-        f.render_widget(block, chunks[0]);
-        let block = Block::default().title("Watch").borders(Borders::ALL);
-        f.render_widget(block, chunks[1]);
-        let block = Block::default().title("Call Stack").borders(Borders::ALL);
-        f.render_widget(block, chunks[2]);
-        let block = Block::default().title("Breakpoints").borders(Borders::ALL);
-        f.render_widget(block, chunks[3]);
-    })?;
-
-    thread::sleep(Duration::from_millis(5000));
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
+    // Initialize logging
+    let log_path = if let Some(path) = &cli.log {
+        path.clone()
+    } else {
+        let data_dir = dirs::data_dir()
+            .ok_or_else(|| anyhow!("Could not resolve OS data directory"))?
+            .join("pesticide");
+        if !data_dir.exists() {
+            std::fs::create_dir(data_dir.clone())?;
+        }
+        data_dir.join("pesticide.log")
+    };
+    WriteLogger::init(
+        LevelFilter::Debug,
+        Config::default(),
+        File::create(log_path)?,
     )?;
-    terminal.show_cursor()?;
+
+    debug!("{:#?}", cli);
+
+    // let _command = Command::new(cli.exec).spawn()?;
 
     Ok(())
 }
 
+#[derive(Debug)]
 struct Cli {
-    exec: String,
+    // exec: String,
+    log: Option<PathBuf>,
 }
 
 // TODO: Help information
