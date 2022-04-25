@@ -1,0 +1,9 @@
+adapter = "debugpy"
+adapter_args = ["-m", "debugpy.adapter"]
+adapter_id = "pydbg"
+
+[launch_args]
+program = "foobar"
+be = "cursed"
+bool = true
+list = ["I", "don't", "like", "you"]
