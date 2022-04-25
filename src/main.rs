@@ -1,5 +1,5 @@
 mod config;
-mod ui;
+mod controller;
 
 #[macro_use]
 extern crate log;
@@ -15,9 +15,8 @@ use std::path::PathBuf;
 use config::Config;
 
 fn main() -> Result<()> {
-    // CLI arguments
+    // Parse CLI arguments
     let mut args = Arguments::from_env();
-    // Print help information
     if args.contains("--help") {
         println!("{}", HELP);
         return Ok(());
@@ -61,10 +60,12 @@ fn main() -> Result<()> {
             config_path.to_str().unwrap()
         );
     }
-    // TODO: Support multiple debug profiles per config
     let config: Config = toml::from_str(&std::fs::read_to_string(config_path)?)
         .context("Failed to parse configuration file")?;
     debug!("{:#?}", config);
+
+    // Start debugging
+    controller::start_debugging(config)?;
 
     Ok(())
 }
