@@ -4,7 +4,7 @@ mod config;
 #[macro_use]
 extern crate log;
 
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use pico_args::Arguments;
 use simplelog::{
     ColorChoice, Config as SLConfig, LevelFilter, TermLogger, TerminalMode, WriteLogger,
@@ -12,7 +12,8 @@ use simplelog::{
 use std::fs::File;
 use std::path::PathBuf;
 
-use config::Config;
+use crate::adapter::Adapter;
+use crate::config::Config;
 
 fn main() -> Result<()> {
     // Parse CLI arguments
@@ -51,8 +52,12 @@ fn main() -> Result<()> {
     // Retrieve local configuration
     let config = Config::new(&cli.config)?;
 
-    // // Start debugging
-    // controller::start_debugging(config)?;
+    // Initialize adapter
+    let adapter = Adapter::new(config)?;
+
+    for _msg in adapter.rx {
+        // TODO:
+    }
 
     Ok(())
 }

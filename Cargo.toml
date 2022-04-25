@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
+crossbeam-channel = "0.5.4"
 crossterm = "0.23.2"
 dirs = "4.0.0"
 log = "0.4.16"
