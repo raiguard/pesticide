@@ -62,8 +62,8 @@ fn main() -> Result<()> {
     for msg in adapter.rx {
         match msg["type"].as_str().unwrap() {
             EVENT => match msg["event"].as_str().unwrap() {
-                InitializedEvent::NAME => (),
-                OutputEvent::NAME => {
+                InitializedEvent::TYPE => (),
+                OutputEvent::TYPE => {
                     let body = OutputEventBody::deserialize(&msg["body"]).unwrap();
                     if let Some(category) = body.category {
                         match category {

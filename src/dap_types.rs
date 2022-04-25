@@ -44,7 +44,7 @@ pub enum SourcePresentationHint {
 pub const EVENT: &str = "event";
 pub trait Event {
     type Body: DeserializeOwned + Serialize;
-    const NAME: &'static str;
+    const TYPE: &'static str;
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -57,7 +57,7 @@ pub struct InitializedEvent {}
 
 impl Event for InitializedEvent {
     type Body = EmptyEventBody;
-    const NAME: &'static str = "initialized";
+    const TYPE: &'static str = "initialized";
 }
 
 // Output
@@ -67,7 +67,7 @@ pub struct OutputEvent {}
 
 impl Event for OutputEvent {
     type Body = OutputEventBody;
-    const NAME: &'static str = "output";
+    const TYPE: &'static str = "output";
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -99,4 +99,61 @@ pub enum OutputEventGroup {
     Start,
     StartCollapsed,
     End,
+}
+
+// REQUESTS
+
+pub const REQUEST: &str = "request";
+pub trait Request {
+    type Args: DeserializeOwned + Serialize;
+    const COMMAND: &'static str;
+}
+
+// Initialize
+
+#[derive(Debug)]
+pub struct InitializeRequest {}
+
+impl Request for InitializeRequest {
+    type Args = InitializeRequestArgs;
+    const COMMAND: &'static str = "initialize";
+}
+
+fn default_as_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializeRequestArgs {
+    #[serde(rename = "clientID")]
+    client_id: Option<String>,
+    client_name: Option<String>,
+    adapter_id: Option<String>,
+    #[serde(default = "default_as_true")]
+    lines_start_at_1: bool,
+    #[serde(default = "default_as_true")]
+    columns_start_at_1: bool,
+    path_format: Option<InitializeRequestPathFormat>,
+    #[serde(default)]
+    supports_variable_type: bool,
+    #[serde(default)]
+    supports_variable_paging: bool,
+    #[serde(default)]
+    supports_run_in_terminal_request: bool,
+    #[serde(default)]
+    supports_memory_references: bool,
+    #[serde(default)]
+    supports_progress_reporting: bool,
+    #[serde(default)]
+    supports_invalidated_event: bool,
+    #[serde(default)]
+    supports_memory_event: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InitializeRequestPathFormat {
+    Path,
+    Uri,
 }
