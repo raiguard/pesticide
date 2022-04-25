@@ -1,9 +1,11 @@
 use crate::config::Config;
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::{Receiver, Sender};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read};
+use std::fmt::Debug;
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 
@@ -43,6 +45,12 @@ impl Adapter {
         let (out_tx, out_rx) = crossbeam_channel::bounded(1024);
         thread::spawn(move || {
             reader_loop(stdout, &out_tx).expect("Failed to read message from debug adapter");
+        });
+
+        let stdin = BufWriter::new(child.stdin.take().context("Failed to open stdin")?);
+        let (in_tx, in_rx) = crossbeam_channel::bounded(1024);
+        thread::spawn(move || {
+            writer_loop(stdin, &in_rx).expect("Failed to read message from debug adapter");
         });
 
         Ok(Self {
@@ -97,4 +105,23 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<Value>) -> Result<()> {
                 .expect("Failed to send message from debug adapter");
         }
     }
+}
+
+// Thread to write to the stdin of the debug adapter process
+fn writer_loop<'a, T, W>(mut writer: W, rx: &Receiver<T>) -> Result<()>
+where
+    T: Deserialize<'a> + Serialize,
+    W: Write,
+{
+    for request in rx {
+        let request = serde_json::to_string(&request)?;
+        write!(
+            writer,
+            "Content-Length: {}\r\n\r\n{}",
+            request.len(),
+            request
+        )?;
+        writer.flush()?;
+    }
+    Ok(())
 }
