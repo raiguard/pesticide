@@ -1,5 +1,5 @@
+mod adapter;
 mod config;
-mod controller;
 
 #[macro_use]
 extern crate log;
@@ -51,8 +51,8 @@ fn main() -> Result<()> {
     // Retrieve local configuration
     let config = Config::new(&cli.config)?;
 
-    // Start debugging
-    controller::start_debugging(config)?;
+    // // Start debugging
+    // controller::start_debugging(config)?;
 
     Ok(())
 }
