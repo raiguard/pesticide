@@ -3,9 +3,9 @@ adapter_args = ["-m", "debugpy.adapter"]
 adapter_id = "pydbg"
 
 [launch_args]
-program = "${CUR_DIR}/test.py"
+program = "${PWD}/test.py"
 args = []
 stopOnEntry = true
 console = "externalTerminal"
 debugOptions = []
-cwd = "${CUR_DIR}"
+cwd = "${PWD}"

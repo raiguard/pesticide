@@ -49,20 +49,7 @@ fn main() -> Result<()> {
     debug!("{:#?}", cli);
 
     // Retrieve local configuration
-    let config_path = if let Some(config) = cli.config {
-        config
-    } else {
-        std::env::current_dir()?.join("pesticide.toml")
-    };
-    if !config_path.exists() {
-        bail!(
-            "Pesticide configuration not found at {}",
-            config_path.to_str().unwrap()
-        );
-    }
-    let config: Config = toml::from_str(&std::fs::read_to_string(config_path)?)
-        .context("Failed to parse configuration file")?;
-    debug!("{:#?}", config);
+    let config = Config::new(&cli.config)?;
 
     // Start debugging
     controller::start_debugging(config)?;
