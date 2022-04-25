@@ -1,11 +1,13 @@
 mod adapter;
 mod config;
+mod dap_types;
 
 #[macro_use]
 extern crate log;
 
 use anyhow::Result;
 use pico_args::Arguments;
+use serde::Deserialize;
 use simplelog::{
     ColorChoice, Config as SLConfig, LevelFilter, TermLogger, TerminalMode, WriteLogger,
 };
@@ -14,6 +16,8 @@ use std::path::PathBuf;
 
 use crate::adapter::Adapter;
 use crate::config::Config;
+use crate::dap_types::*;
+use crate::Event;
 
 fn main() -> Result<()> {
     // Parse CLI arguments
@@ -55,8 +59,23 @@ fn main() -> Result<()> {
     // Initialize adapter
     let adapter = Adapter::new(config)?;
 
-    for _msg in adapter.rx {
-        // TODO:
+    for msg in adapter.rx {
+        match msg["type"].as_str().unwrap() {
+            EVENT => match msg["event"].as_str().unwrap() {
+                InitializedEvent::NAME => (),
+                OutputEvent::NAME => {
+                    let body = OutputEventBody::deserialize(&msg["body"]).unwrap();
+                    if let Some(category) = body.category {
+                        match category {
+                            OutputEventCategory::Telemetry => (), // We careth not about telemetry
+                            _ => println!("{}", body.output),
+                        }
+                    }
+                }
+                _ => error!("Unrecognized event"),
+            },
+            _ => error!("Unrecognized payload"),
+        }
     }
 
     Ok(())

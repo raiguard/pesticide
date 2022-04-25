@@ -10,6 +10,8 @@ use std::thread;
 pub struct Adapter {
     pub child: Child,
     pub rx: Receiver<Value>,
+
+    next_seq: u32,
 }
 
 impl Adapter {
@@ -43,7 +45,11 @@ impl Adapter {
             reader_loop(stdout, &out_tx).expect("Failed to read message from debug adapter");
         });
 
-        Ok(Self { child, rx: out_rx })
+        Ok(Self {
+            child,
+            rx: out_rx,
+            next_seq: 0,
+        })
     }
 }
 
@@ -78,11 +84,16 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<Value>) -> Result<()> {
         // Now read that many characters to obtain the message
         let mut content = vec![0; content_len];
         reader.read_exact(&mut content)?;
-        let msg = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
-        let output: Value = serde_json::from_str(&msg).unwrap();
-        debug!("From debug adapter: {}", output);
-        if output.is_object() {
-            tx.send(output)
+        let content = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
+        let msg: Value = serde_json::from_str(&content).unwrap();
+        debug!(
+            "From debug adapter: {}",
+            // TEMPORARY:
+            serde_json::to_string_pretty(&msg)?
+        );
+
+        if msg.is_object() {
+            tx.send(msg)
                 .expect("Failed to send message from debug adapter");
         }
     }
