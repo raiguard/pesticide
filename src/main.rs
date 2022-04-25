@@ -1,21 +1,16 @@
+mod config;
+mod ui;
+
 #[macro_use]
 extern crate log;
 
-use anyhow::bail;
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use pico_args::Arguments;
-use simplelog::ColorChoice;
-use simplelog::Config as SLConfig;
-use simplelog::LevelFilter;
-use simplelog::TermLogger;
-use simplelog::TerminalMode;
-use simplelog::WriteLogger;
+use simplelog::{
+    ColorChoice, Config as SLConfig, LevelFilter, TermLogger, TerminalMode, WriteLogger,
+};
 use std::fs::File;
 use std::path::PathBuf;
-
-mod config;
-mod ui;
 
 use config::Config;
 
