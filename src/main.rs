@@ -70,11 +70,13 @@ fn main() -> Result<()> {
                         trace!("Updating seq");
                         event_adapter.lock().unwrap().update_seq(payload.seq);
                         trace!("Updated seq");
-                        match payload.body.category {
-                            Some(OutputEventCategory::Telemetry) => {
-                                info!("IDGAF about telemetry")
-                            } // IDGAF about telemetry
-                            _ => info!("Debug adapter message: {}", payload.body.output),
+                        if let Some(body) = payload.body {
+                            match body.category {
+                                Some(OutputEventCategory::Telemetry) => {
+                                    info!("IDGAF about telemetry")
+                                } // IDGAF about telemetry
+                                _ => info!("Debug adapter message: {}", body.output),
+                            }
                         }
                     }
                 },

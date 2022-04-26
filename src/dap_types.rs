@@ -23,7 +23,7 @@ pub enum Event {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EventPayload<T> {
     pub seq: u32,
-    pub body: T,
+    pub body: Option<T>,
 }
 
 // Output
@@ -407,7 +407,7 @@ mod tests {
         assert_eq!(
             msg,
             AdapterMessage::Event(Event::Output(EventPayload {
-                body: OutputEvent {
+                body: Some(OutputEvent {
                     category: Some(OutputEventCategory::Console),
                     output: "Hello world!".to_string(),
                     group: None,
@@ -416,7 +416,7 @@ mod tests {
                     line: None,
                     column: None,
                     data: None
-                },
+                }),
                 seq: 1
             })),
         );
