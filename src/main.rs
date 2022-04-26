@@ -56,11 +56,12 @@ fn main() -> Result<()> {
     let config = Config::new(&cli.config)?;
 
     // Initialize adapter
-    let adapter = Adapter::new(config)?;
+    let mut adapter = Adapter::new(config)?;
 
     // Handle incoming messages
+    let event_rx = adapter.rx.clone();
     let event_loop = thread::spawn(move || {
-        for msg in &adapter.rx {
+        for msg in event_rx {
             match msg {
                 AdapterMessage::Event(event) => match event {
                     Event::Output(payload) => match payload.body.category {
@@ -79,11 +80,11 @@ fn main() -> Result<()> {
     thread::sleep(std::time::Duration::from_millis(500));
 
     // Send initialize request
-    let init = AdapterMessage::Request(RequestPayload {
-        args: Some(RequestArgs::Initialize(InitializeRequestArgs {
+    let init = AdapterMessage::Request(Request::Initialize(RequestPayload {
+        args: Some(InitializeRequest {
             client_id: Some("pesticide".to_string()),
             client_name: Some("Pesticide".to_string()),
-            adapter_id: adapter.config.adapter_id,
+            adapter_id: adapter.config.adapter_id.clone(),
             lines_start_at_1: true,
             columns_start_at_1: true,
             path_format: Some(InitializeRequestPathFormat::Path),
@@ -94,10 +95,9 @@ fn main() -> Result<()> {
             supports_progress_reporting: false,
             supports_invalidated_event: false,
             supports_memory_event: false,
-        })),
-        command: "initialize".to_string(),
-        seq: adapter.next_seq + 1,
-    });
+        }),
+        seq: adapter.next_seq(),
+    }));
 
     adapter.tx.send(init)?;
 

@@ -60,6 +60,12 @@ impl Adapter {
             next_seq: 0,
         })
     }
+
+    pub fn next_seq(&mut self) -> u32 {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        seq
+    }
 }
 
 // Thread to read the stdout of the debug adapter process.
@@ -99,7 +105,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
             Ok(msg) => tx
                 .send(msg)
                 .expect("Failed to send message from debug adapter"),
-            Err(_) => error!("Could not parse response from debug adapter"),
+            Err(e) => error!("Could not parse response from debug adapter: {}", e),
         }
     }
 }
