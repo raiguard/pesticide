@@ -82,13 +82,7 @@ fn main() -> Result<()> {
                 },
                 AdapterMessage::Request(req) => debug!("RECEIVED REQUEST: {:#?}", req),
                 AdapterMessage::Response(res) => match res {
-                    Response::Initialize(payload) => {
-                        if payload.success {
-                            info!("Debug adapter successfully initialized");
-                        } else {
-                            error!("Debug adapter did not successfully initialize");
-                        }
-                    }
+                    Response::Initialize(payload) => {}
                 },
             }
         }

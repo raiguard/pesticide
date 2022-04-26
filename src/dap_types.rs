@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type")]
@@ -122,16 +122,31 @@ pub enum InitializeRequestPathFormat {
 #[serde(tag = "command")]
 #[serde(rename_all = "lowercase")]
 pub enum Response {
-    Initialize(ResponsePayload<Capabilities>),
+    Initialize(ResponseStatus<Capabilities>),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "success")]
+pub enum ResponseStatus<T> {
+    #[serde(rename = true)]
+    Success(ResponsePayload<T>),
+    #[serde(rename = false)]
+    Error(ErrorResponsePayload),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResponsePayload<T> {
     pub seq: u32,
     pub request_seq: u32,
-    pub success: bool,
-    pub message: Option<String>,
     pub body: Option<T>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ErrorResponsePayload {
+    pub seq: u32,
+    pub request_seq: u32,
+    pub message: Option<String>,
+    pub body: Option<Message>,
 }
 
 // TYPES
@@ -348,6 +363,36 @@ pub struct ExceptionBreakpointsFilter {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Message {
+    // Unique identifier for the message.
+    id: u32,
+
+    // A format string for the message. Embedded variables have the form '{name}'.
+    // If variable name starts with an underscore character, the variable does not
+    // contain user data (PII) and can be safely used for telemetry purposes.
+    format: String,
+
+    // An object used as a dictionary for looking up the variables in the format
+    // string.
+    variables: HashMap<String, String>,
+
+    // If true send to telemetry.
+    send_telemetry: bool,
+
+    // If true show user.
+    show_user: bool,
+
+    // An optional url where additional information about this message can be
+    // found.
+    url: String,
+
+    // An optional label that is presented to the user as the UI for opening the
+    // url.
+    url_label: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Source {
     pub name: String,
     pub path: Option<PathBuf>,
@@ -529,85 +574,85 @@ mod tests {
 
         assert_eq!(
             msg,
-            AdapterMessage::Response(Response::Initialize(ResponsePayload {
-                seq: 3,
-                request_seq: 0,
-                success: true,
-                message: None,
-                body: Some(Capabilities {
-                    supports_completions_request: true,
-                    supports_conditional_breakpoints: true,
-                    supports_configuration_done_request: true,
-                    supports_delayed_stack_trace_loading: true,
-                    supports_evaluate_for_hovers: true,
-                    supports_exception_info_request: true,
-                    supports_exception_options: true,
-                    supports_function_breakpoints: true,
-                    supports_hit_conditional_breakpoints: true,
-                    supports_log_points: true,
-                    supports_modules_request: true,
-                    supports_set_expression: true,
-                    supports_set_variable: true,
-                    supports_value_formatting_options: true,
-                    supports_goto_targets_request: true,
-                    supports_clipboard_context: true,
-                    supports_step_back: false,
-                    supports_restart_frame: false,
-                    supports_step_in_targets_request: true,
-                    completion_trigger_characters: false,
-                    additional_module_columns: false,
-                    supported_checksum_algorithms: false,
-                    supports_restart_request: false,
-                    support_terminate_debuggee: false,
-                    support_suspend_debuggee: false,
-                    supports_loaded_sources_request: false,
-                    supports_terminate_threads_request: false,
-                    supports_terminate_request: false,
-                    supports_data_breakpoints: false,
-                    supports_read_memory_request: false,
-                    supports_write_memory_request: false,
-                    supports_disassemble_request: false,
-                    supports_cancel_request: false,
-                    supports_breakpoint_locations_request: false,
-                    supports_stepping_granularity: false,
-                    supports_instruction_breakpoints: false,
-                    supports_exception_filter_options: false,
-                    supports_single_thread_execution_requests: false,
-                    exception_breakpoint_filters: Some(vec![
-                        ExceptionBreakpointsFilter {
-                            filter: "raised".to_string(),
-                            label: "Raised Exceptions".to_string(),
-                            description: Some(
-                                "Break whenever any exception is raised.".to_string()
-                            ),
-                            default: false,
-                            supports_condition: false,
-                            condition_description: None,
-                        },
-                        ExceptionBreakpointsFilter {
-                            filter: "uncaught".to_string(),
-                            label: "Uncaught Exceptions".to_string(),
-                            description: Some(
-                                "Break when the process is exiting due to unhandled exception."
-                                    .to_string(),
-                            ),
-                            default: true,
-                            supports_condition: false,
-                            condition_description: None,
-                        },
-                        ExceptionBreakpointsFilter {
-                            filter: "userUnhandled".to_string(),
-                            label: "User Uncaught Exceptions".to_string(),
-                            description: Some(
-                                "Break when exception escapes into library code.".to_string(),
-                            ),
-                            default: false,
-                            supports_condition: false,
-                            condition_description: None,
-                        },
-                    ]),
-                }),
-            }))
+            AdapterMessage::Response(Response::Initialize(ResponseStatus::Success(
+                ResponsePayload {
+                    seq: 3,
+                    request_seq: 0,
+                    body: Some(Capabilities {
+                        supports_completions_request: true,
+                        supports_conditional_breakpoints: true,
+                        supports_configuration_done_request: true,
+                        supports_delayed_stack_trace_loading: true,
+                        supports_evaluate_for_hovers: true,
+                        supports_exception_info_request: true,
+                        supports_exception_options: true,
+                        supports_function_breakpoints: true,
+                        supports_hit_conditional_breakpoints: true,
+                        supports_log_points: true,
+                        supports_modules_request: true,
+                        supports_set_expression: true,
+                        supports_set_variable: true,
+                        supports_value_formatting_options: true,
+                        supports_goto_targets_request: true,
+                        supports_clipboard_context: true,
+                        supports_step_back: false,
+                        supports_restart_frame: false,
+                        supports_step_in_targets_request: true,
+                        completion_trigger_characters: false,
+                        additional_module_columns: false,
+                        supported_checksum_algorithms: false,
+                        supports_restart_request: false,
+                        support_terminate_debuggee: false,
+                        support_suspend_debuggee: false,
+                        supports_loaded_sources_request: false,
+                        supports_terminate_threads_request: false,
+                        supports_terminate_request: false,
+                        supports_data_breakpoints: false,
+                        supports_read_memory_request: false,
+                        supports_write_memory_request: false,
+                        supports_disassemble_request: false,
+                        supports_cancel_request: false,
+                        supports_breakpoint_locations_request: false,
+                        supports_stepping_granularity: false,
+                        supports_instruction_breakpoints: false,
+                        supports_exception_filter_options: false,
+                        supports_single_thread_execution_requests: false,
+                        exception_breakpoint_filters: Some(vec![
+                            ExceptionBreakpointsFilter {
+                                filter: "raised".to_string(),
+                                label: "Raised Exceptions".to_string(),
+                                description: Some(
+                                    "Break whenever any exception is raised.".to_string()
+                                ),
+                                default: false,
+                                supports_condition: false,
+                                condition_description: None,
+                            },
+                            ExceptionBreakpointsFilter {
+                                filter: "uncaught".to_string(),
+                                label: "Uncaught Exceptions".to_string(),
+                                description: Some(
+                                    "Break when the process is exiting due to unhandled exception."
+                                        .to_string(),
+                                ),
+                                default: true,
+                                supports_condition: false,
+                                condition_description: None,
+                            },
+                            ExceptionBreakpointsFilter {
+                                filter: "userUnhandled".to_string(),
+                                label: "User Uncaught Exceptions".to_string(),
+                                description: Some(
+                                    "Break when exception escapes into library code.".to_string(),
+                                ),
+                                default: false,
+                                supports_condition: false,
+                                condition_description: None,
+                            },
+                        ]),
+                    }),
+                }
+            )))
         );
     }
 }
