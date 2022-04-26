@@ -1,55 +1,14 @@
-// TODO: Don't use anyhow here, this is a library!
-use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum AdapterMessage {
     Event(EventPayload),
-    // Request(RequestPayload),
+    Request(RequestPayload),
     // Response(ResponsePayload),
-    Unknown(Value),
-}
-
-impl AdapterMessage {
-    pub fn from(input: &str) -> Result<Self> {
-        let json: Value = serde_json::from_str(input)?;
-        let msg_type = json["type"]
-            .as_str()
-            .ok_or_else(|| anyhow!("Invalid DAP message format"))?;
-
-        Ok(match msg_type {
-            "event" => {
-                let event_name = json["event"]
-                    .as_str()
-                    .ok_or_else(|| anyhow!("Missing event identifier"))?;
-
-                let (event_name, body) = match event_name {
-                    "output" => ("output".to_string(), {
-                        OutputEventBody::deserialize(&json["body"])
-                            .ok()
-                            .map(EventBody::Output)
-                    }),
-                    _ => (
-                        event_name.to_string(),
-                        match json["body"] {
-                            Value::Object(_) => Some(EventBody::Unknown(json["body"].clone())),
-                            _ => None,
-                        },
-                    ),
-                };
-
-                AdapterMessage::Event(EventPayload {
-                    body,
-                    event: event_name,
-                    seq: json["seq"].as_u64().map(|value| value as u32).unwrap(),
-                })
-            }
-            _ => AdapterMessage::Unknown(json),
-        })
-    }
 }
 
 // EVENTS
@@ -57,6 +16,8 @@ impl AdapterMessage {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventPayload {
+    #[serde(rename = "type")]
+    pub id: String,
     pub body: Option<EventBody>,
     pub event: String,
     pub seq: u32,
@@ -64,9 +25,9 @@ pub struct EventPayload {
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum EventBody {
     Output(OutputEventBody),
-    Unknown(Value),
 }
 
 // Output
@@ -104,6 +65,20 @@ pub enum OutputEventGroup {
 
 // REQUESTS
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RequestPayload {
+    #[serde(rename = "arguments")]
+    pub args: Option<RequestArgs>,
+    #[serde(rename = "type")]
+    pub id: String,
+    pub command: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RequestArgs {
+    Initialize(InitializeRequestArgs),
+}
+
 // Initialize
 
 fn default_as_true() -> bool {
@@ -114,28 +89,28 @@ fn default_as_true() -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct InitializeRequestArgs {
     #[serde(rename = "clientID")]
-    client_id: Option<String>,
-    client_name: Option<String>,
-    adapter_id: Option<String>,
+    pub client_id: Option<String>,
+    pub client_name: Option<String>,
+    pub adapter_id: Option<String>,
     #[serde(default = "default_as_true")]
-    lines_start_at_1: bool,
+    pub lines_start_at_1: bool,
     #[serde(default = "default_as_true")]
-    columns_start_at_1: bool,
-    path_format: Option<InitializeRequestPathFormat>,
+    pub columns_start_at_1: bool,
+    pub path_format: Option<InitializeRequestPathFormat>,
     #[serde(default)]
-    supports_variable_type: bool,
+    pub supports_variable_type: bool,
     #[serde(default)]
-    supports_variable_paging: bool,
+    pub supports_variable_paging: bool,
     #[serde(default)]
-    supports_run_in_terminal_request: bool,
+    pub supports_run_in_terminal_request: bool,
     #[serde(default)]
-    supports_memory_references: bool,
+    pub supports_memory_references: bool,
     #[serde(default)]
-    supports_progress_reporting: bool,
+    pub supports_progress_reporting: bool,
     #[serde(default)]
-    supports_invalidated_event: bool,
+    pub supports_invalidated_event: bool,
     #[serde(default)]
-    supports_memory_event: bool,
+    pub supports_memory_event: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -199,8 +174,9 @@ mod tests {
                 "output": "Hello world!"
             }
         }"#;
+        let msg: AdapterMessage = serde_json::from_str(json_str).unwrap();
         assert_eq!(
-            AdapterMessage::from(json_str).unwrap(),
+            msg,
             AdapterMessage::Event(EventPayload {
                 body: Some(EventBody::Output(OutputEventBody {
                     category: Some(OutputEventCategory::Console),
@@ -213,8 +189,10 @@ mod tests {
                     data: None
                 })),
                 event: "output".to_string(),
+                id: "event".to_string(),
                 seq: 1
             })
         );
+        println!("{}", serde_json::to_string_pretty(&msg).unwrap());
     }
 }

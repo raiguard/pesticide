@@ -1,5 +1,7 @@
 use crate::config::Config;
-use crate::dap_types::AdapterMessage;
+use crate::dap_types::{
+    AdapterMessage, InitializeRequestArgs, InitializeRequestPathFormat, RequestArgs, RequestPayload,
+};
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -51,6 +53,29 @@ impl Adapter {
             writer_loop(stdin, &in_rx).expect("Failed to read message from debug adapter");
         });
 
+        // Send initialize request
+        let init = AdapterMessage::Request(RequestPayload {
+            args: Some(RequestArgs::Initialize(InitializeRequestArgs {
+                client_id: Some("pesticide".to_string()),
+                client_name: Some("Pesticide".to_string()),
+                adapter_id: config.adapter_id,
+                lines_start_at_1: true,
+                columns_start_at_1: true,
+                path_format: Some(InitializeRequestPathFormat::Path),
+                supports_variable_type: false,
+                supports_variable_paging: false,
+                supports_run_in_terminal_request: false,
+                supports_memory_references: false,
+                supports_progress_reporting: false,
+                supports_invalidated_event: false,
+                supports_memory_event: false,
+            })),
+            command: "initialize".to_string(),
+            id: "request".to_string(),
+        });
+
+        in_tx.send(init)?;
+
         Ok(Self {
             child,
             rx: out_rx,
@@ -93,7 +118,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
         reader.read_exact(&mut content)?;
         let content = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
         debug!("From debug adapter: {}", content);
-        match AdapterMessage::from(&content) {
+        match serde_json::from_str::<AdapterMessage>(&content) {
             Ok(msg) => tx
                 .send(msg)
                 .expect("Failed to send message from debug adapter"),
@@ -105,6 +130,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
 // Thread to write to the stdin of the debug adapter process
 fn writer_loop(mut writer: impl Write, rx: &Receiver<AdapterMessage>) -> Result<()> {
     for request in rx {
+        trace!("Transmitting request to debug adapter");
         let request = serde_json::to_string(&request)?;
         write!(
             writer,

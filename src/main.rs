@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         // data_dir.join("pesticide.log")
         // TEMPORARY:
         TermLogger::init(
-            LevelFilter::Debug,
+            LevelFilter::Trace,
             SLConfig::default(),
             TerminalMode::Stdout,
             ColorChoice::Auto,
@@ -72,13 +72,10 @@ fn main() -> Result<()> {
                             } // IDGAF about telemetry
                             _ => info!("Debug adapter message: {}", body.output),
                         },
-                        EventBody::Unknown(_) => todo!(),
                     }
                 }
             }
-            AdapterMessage::Unknown(payload) => {
-                warn!("Received unknown payload from debug adapter: {}", payload)
-            }
+            AdapterMessage::Request(_) => todo!(),
         }
     }
 
