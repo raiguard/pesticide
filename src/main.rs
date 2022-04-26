@@ -12,6 +12,7 @@ use simplelog::{
 };
 use std::fs::File;
 use std::path::PathBuf;
+use std::thread;
 
 use crate::adapter::Adapter;
 use crate::config::Config;
@@ -55,29 +56,52 @@ fn main() -> Result<()> {
     let config = Config::new(&cli.config)?;
 
     // Initialize adapter
-    let mut adapter = Adapter::new(config)?;
+    let adapter = Adapter::new(config)?;
 
     // Handle incoming messages
-    for msg in &adapter.rx {
-        match msg {
-            AdapterMessage::Event(payload) => {
-                // TODO: Handle this automatically
-                adapter.next_seq = payload.seq + 1;
-
-                if let Some(body) = payload.body {
-                    match body {
-                        EventBody::Output(body) => match body.category {
-                            Some(OutputEventCategory::Telemetry) => {
-                                info!("IDGAF about telemetry")
-                            } // IDGAF about telemetry
-                            _ => info!("Debug adapter message: {}", body.output),
-                        },
-                    }
-                }
+    let event_loop = thread::spawn(move || {
+        for msg in &adapter.rx {
+            match msg {
+                AdapterMessage::Event(event) => match event {
+                    Event::Output(payload) => match payload.body.category {
+                        Some(OutputEventCategory::Telemetry) => {
+                            info!("IDGAF about telemetry")
+                        } // IDGAF about telemetry
+                        _ => info!("Debug adapter message: {}", payload.body.output),
+                    },
+                },
+                AdapterMessage::Request(payload) => debug!("REQUEST: {:#?}", payload),
+                AdapterMessage::Response(payload) => debug!("RESPONSE: {:#?}", payload),
             }
-            AdapterMessage::Request(_) => todo!(),
         }
-    }
+    });
+
+    thread::sleep(std::time::Duration::from_millis(500));
+
+    // Send initialize request
+    let init = AdapterMessage::Request(RequestPayload {
+        args: Some(RequestArgs::Initialize(InitializeRequestArgs {
+            client_id: Some("pesticide".to_string()),
+            client_name: Some("Pesticide".to_string()),
+            adapter_id: adapter.config.adapter_id,
+            lines_start_at_1: true,
+            columns_start_at_1: true,
+            path_format: Some(InitializeRequestPathFormat::Path),
+            supports_variable_type: false,
+            supports_variable_paging: false,
+            supports_run_in_terminal_request: false,
+            supports_memory_references: false,
+            supports_progress_reporting: false,
+            supports_invalidated_event: false,
+            supports_memory_event: false,
+        })),
+        command: "initialize".to_string(),
+        seq: adapter.next_seq + 1,
+    });
+
+    adapter.tx.send(init)?;
+
+    event_loop.join().unwrap();
 
     Ok(())
 }
