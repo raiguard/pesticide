@@ -13,6 +13,7 @@ pub struct Adapter {
     pub rx: Receiver<AdapterMessage>,
     pub tx: Sender<AdapterMessage>,
     pub next_seq: u32,
+    pub capabilities: Option<Capabilities>,
 }
 
 impl Adapter {
@@ -58,6 +59,7 @@ impl Adapter {
             rx: out_rx,
             tx: in_tx,
             next_seq: 0,
+            capabilities: None,
         })
     }
 

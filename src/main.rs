@@ -81,13 +81,12 @@ fn main() -> Result<()> {
                     }
                 },
                 AdapterMessage::Request(req) => debug!("RECEIVED REQUEST: {:#?}", req),
+                // TODO: Response state - right now it will fail to deserialize if it did not succeed
+                // See https://github.com/serde-rs/serde/pull/2056#issuecomment-1109389651
                 AdapterMessage::Response(res) => match res {
                     Response::Initialize(payload) => {
-                        if payload.success {
-                            info!("Debug adapter successfully initialized");
-                        } else {
-                            error!("Debug adapter did not successfully initialize");
-                        }
+                        event_adapter.lock().unwrap().capabilities = payload.body;
+                        trace!("Saved capabilities to Adapter");
                     }
                 },
             }
