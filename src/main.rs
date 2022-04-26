@@ -13,11 +13,13 @@ use simplelog::{
 };
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::thread;
 
 use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap_types::*;
-use crate::Event;
 
 fn main() -> Result<()> {
     // Parse CLI arguments
@@ -57,26 +59,31 @@ fn main() -> Result<()> {
     let config = Config::new(&cli.config)?;
 
     // Initialize adapter
-    let adapter = Adapter::new(config)?;
+    let adapter = Arc::new(Mutex::new(Adapter::new(config)?));
 
-    for msg in adapter.rx {
-        match msg["type"].as_str().unwrap() {
-            EVENT => match msg["event"].as_str().unwrap() {
-                InitializedEvent::TYPE => (),
-                OutputEvent::TYPE => {
-                    let body = OutputEventBody::deserialize(&msg["body"]).unwrap();
-                    if let Some(category) = body.category {
-                        match category {
-                            OutputEventCategory::Telemetry => (), // We careth not about telemetry
-                            _ => println!("{}", body.output),
-                        }
-                    }
-                }
-                _ => error!("Unrecognized event"),
-            },
-            _ => error!("Unrecognized payload"),
+    // Handle incoming messages
+    let read_adapter = adapter.clone();
+    thread::spawn(move || {
+        for msg in &read_adapter.lock().unwrap().rx {
+            println!("{msg}");
+            // match msg["type"].as_str().unwrap() {
+            //     EVENT => match msg["event"].as_str().unwrap() {
+            //         InitializedEvent::TYPE => (),
+            //         OutputEvent::TYPE => {
+            //             let body = OutputEventBody::deserialize(&msg["body"]).unwrap();
+            //             if let Some(category) = body.category {
+            //                 match category {
+            //                     OutputEventCategory::Telemetry => (), // We careth not about telemetry
+            //                     _ => println!("{}", body.output),
+            //                 }
+            //             }
+            //         }
+            //         _ => error!("Unrecognized event"),
+            //     },
+            //     _ => error!("Unrecognized payload"),
+            // }
         }
-    }
+    });
 
     Ok(())
 }

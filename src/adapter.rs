@@ -1,10 +1,8 @@
 use crate::config::Config;
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::{Receiver, Sender};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -12,6 +10,7 @@ use std::thread;
 pub struct Adapter {
     pub child: Child,
     pub rx: Receiver<Value>,
+    pub tx: Sender<Value>,
 
     next_seq: u32,
 }
@@ -42,7 +41,7 @@ impl Adapter {
         });
 
         let stdout = BufReader::new(child.stdout.take().context("Failed to open stdout")?);
-        let (out_tx, out_rx) = crossbeam_channel::bounded(1024);
+        let (out_tx, out_rx): (Sender<Value>, Receiver<Value>) = crossbeam_channel::bounded(1024);
         thread::spawn(move || {
             reader_loop(stdout, &out_tx).expect("Failed to read message from debug adapter");
         });
@@ -56,6 +55,8 @@ impl Adapter {
         Ok(Self {
             child,
             rx: out_rx,
+            tx: in_tx,
+
             next_seq: 0,
         })
     }
@@ -100,7 +101,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<Value>) -> Result<()> {
             serde_json::to_string_pretty(&msg)?
         );
 
-        if msg.is_object() {
+        if let Some(obj_type) = msg["type"].as_str() {
             tx.send(msg)
                 .expect("Failed to send message from debug adapter");
         }
@@ -108,11 +109,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<Value>) -> Result<()> {
 }
 
 // Thread to write to the stdin of the debug adapter process
-fn writer_loop<'a, T, W>(mut writer: W, rx: &Receiver<T>) -> Result<()>
-where
-    T: Deserialize<'a> + Serialize,
-    W: Write,
-{
+fn writer_loop(mut writer: impl Write, rx: &Receiver<Value>) -> Result<()> {
     for request in rx {
         let request = serde_json::to_string(&request)?;
         write!(

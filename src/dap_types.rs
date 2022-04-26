@@ -1,74 +1,73 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+// TODO: Don't use anyhow here, this is a library!
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Source {
-    pub name: String,
-    pub path: Option<PathBuf>,
-    pub source_reference: Option<u32>,
-    pub presentation_hint: Option<SourcePresentationHint>,
-    pub origin: Option<String>,
-    pub sources: Option<Vec<Source>>,
-    pub adapter_data: Option<Value>,
-    pub checksums: Option<Vec<Checksum>>,
+pub enum AdapterMessage {
+    Event(EventPayload),
+    // Request(RequestPayload),
+    // Response(ResponsePayload),
+    Unknown(Value),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Checksum {
-    pub algorithm: ChecksumAlgorithm,
-    pub checksum: String,
-}
+impl AdapterMessage {
+    pub fn from(input: &str) -> Result<Self> {
+        let json: Value = serde_json::from_str(input)?;
+        let msg_type = json["type"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Invalid DAP message format"))?;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum ChecksumAlgorithm {
-    MD5,
-    SHA1,
-    SHA256,
-    #[serde(rename = "lowercase")]
-    Timestamp,
-}
+        Ok(match msg_type {
+            "event" => {
+                let event_name = json["event"]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("Missing event identifier"))?;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SourcePresentationHint {
-    Normal,
-    Emphasize,
-    Deemphasize,
+                let (event_name, body) = match event_name {
+                    "output" => ("output".to_string(), {
+                        OutputEventBody::deserialize(&json["body"])
+                            .ok()
+                            .map(EventBody::Output)
+                    }),
+                    _ => (
+                        event_name.to_string(),
+                        match json["body"] {
+                            Value::Object(_) => Some(EventBody::Unknown(json["body"].clone())),
+                            _ => None,
+                        },
+                    ),
+                };
+
+                AdapterMessage::Event(EventPayload {
+                    body,
+                    event: event_name,
+                    seq: json["seq"].as_u64().map(|value| value as u32).unwrap(),
+                })
+            }
+            _ => AdapterMessage::Unknown(json),
+        })
+    }
 }
 
 // EVENTS
 
-pub const EVENT: &str = "event";
-pub trait Event {
-    type Body: DeserializeOwned + Serialize;
-    const TYPE: &'static str;
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventPayload {
+    body: Option<EventBody>,
+    event: String,
+    seq: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct EmptyEventBody();
-
-// Initialized
-
-#[derive(Debug)]
-pub struct InitializedEvent {}
-
-impl Event for InitializedEvent {
-    type Body = EmptyEventBody;
-    const TYPE: &'static str = "initialized";
+pub enum EventBody {
+    Output(OutputEventBody),
+    Unknown(Value),
 }
 
 // Output
-
-#[derive(Debug)]
-pub struct OutputEvent {}
-
-impl Event for OutputEvent {
-    type Body = OutputEventBody;
-    const TYPE: &'static str = "output";
-}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,21 +102,7 @@ pub enum OutputEventGroup {
 
 // REQUESTS
 
-pub const REQUEST: &str = "request";
-pub trait Request {
-    type Args: DeserializeOwned + Serialize;
-    const COMMAND: &'static str;
-}
-
 // Initialize
-
-#[derive(Debug)]
-pub struct InitializeRequest {}
-
-impl Request for InitializeRequest {
-    type Args = InitializeRequestArgs;
-    const COMMAND: &'static str = "initialize";
-}
 
 fn default_as_true() -> bool {
     true
@@ -156,4 +141,78 @@ pub struct InitializeRequestArgs {
 pub enum InitializeRequestPathFormat {
     Path,
     Uri,
+}
+
+// TYPES
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source {
+    pub name: String,
+    pub path: Option<PathBuf>,
+    pub source_reference: Option<u32>,
+    pub presentation_hint: Option<SourcePresentationHint>,
+    pub origin: Option<String>,
+    pub sources: Option<Vec<Source>>,
+    pub adapter_data: Option<Value>,
+    pub checksums: Option<Vec<Checksum>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Checksum {
+    pub algorithm: ChecksumAlgorithm,
+    pub checksum: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ChecksumAlgorithm {
+    MD5,
+    SHA1,
+    SHA256,
+    #[serde(rename = "lowercase")]
+    Timestamp,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SourcePresentationHint {
+    Normal,
+    Emphasize,
+    Deemphasize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_event() {
+        let json_str = r#"{
+            "type": "event",
+            "event": "output",
+            "seq": 1,
+            "body": {
+                "category": "console",
+                "output": "Hello world!"
+            }
+        }"#;
+        assert_eq!(
+            AdapterMessage::from(json_str).unwrap(),
+            AdapterMessage::Event(EventPayload {
+                body: Some(EventBody::Output(OutputEventBody {
+                    category: Some(OutputEventCategory::Console),
+                    output: "Hello world!".to_string(),
+                    group: None,
+                    variables_reference: None,
+                    source: None,
+                    line: None,
+                    column: None,
+                    data: None
+                })),
+                event: "output".to_string(),
+                seq: 1
+            })
+        );
+    }
 }
