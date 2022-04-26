@@ -12,6 +12,7 @@ use simplelog::{
 };
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::adapter::Adapter;
@@ -56,35 +57,49 @@ fn main() -> Result<()> {
     let config = Config::new(&cli.config)?;
 
     // Initialize adapter
-    let mut adapter = Adapter::new(config)?;
+    let adapter = Arc::new(Mutex::new(Adapter::new(config.clone())?));
 
     // Handle incoming messages
-    let event_rx = adapter.rx.clone();
+    let event_rx = adapter.lock().unwrap().rx.clone();
+    let event_adapter = adapter.clone();
     let event_loop = thread::spawn(move || {
         for msg in event_rx {
             match msg {
                 AdapterMessage::Event(event) => match event {
-                    Event::Output(payload) => match payload.body.category {
-                        Some(OutputEventCategory::Telemetry) => {
-                            info!("IDGAF about telemetry")
-                        } // IDGAF about telemetry
-                        _ => info!("Debug adapter message: {}", payload.body.output),
-                    },
+                    Event::Output(payload) => {
+                        trace!("Updating seq");
+                        event_adapter.lock().unwrap().update_seq(payload.seq);
+                        trace!("Updated seq");
+                        match payload.body.category {
+                            Some(OutputEventCategory::Telemetry) => {
+                                info!("IDGAF about telemetry")
+                            } // IDGAF about telemetry
+                            _ => info!("Debug adapter message: {}", payload.body.output),
+                        }
+                    }
                 },
-                AdapterMessage::Request(payload) => debug!("REQUEST: {:#?}", payload),
-                AdapterMessage::Response(payload) => debug!("RESPONSE: {:#?}", payload),
+                AdapterMessage::Request(req) => debug!("RECEIVED REQUEST: {:#?}", req),
+                AdapterMessage::Response(res) => match res {
+                    Response::Initialize(payload) => {
+                        if payload.success {
+                            info!("Debug adapter successfully initialized");
+                        } else {
+                            error!("Debug adapter did not successfully initialize");
+                        }
+                    }
+                },
             }
         }
     });
 
-    thread::sleep(std::time::Duration::from_millis(500));
+    thread::sleep(std::time::Duration::from_millis(100));
 
     // Send initialize request
     let init = AdapterMessage::Request(Request::Initialize(RequestPayload {
         args: Some(InitializeRequest {
             client_id: Some("pesticide".to_string()),
             client_name: Some("Pesticide".to_string()),
-            adapter_id: adapter.config.adapter_id.clone(),
+            adapter_id: config.adapter_id,
             lines_start_at_1: true,
             columns_start_at_1: true,
             path_format: Some(InitializeRequestPathFormat::Path),
@@ -96,10 +111,10 @@ fn main() -> Result<()> {
             supports_invalidated_event: false,
             supports_memory_event: false,
         }),
-        seq: adapter.next_seq(),
+        seq: adapter.lock().unwrap().next_seq(),
     }));
 
-    adapter.tx.send(init)?;
+    adapter.lock().unwrap().tx.send(init)?;
 
     event_loop.join().unwrap();
 

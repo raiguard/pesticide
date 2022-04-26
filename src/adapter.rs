@@ -66,6 +66,12 @@ impl Adapter {
         self.next_seq += 1;
         seq
     }
+
+    pub fn update_seq(&mut self, new_seq: u32) {
+        if new_seq >= self.next_seq {
+            self.next_seq = new_seq + 1
+        }
+    }
 }
 
 // Thread to read the stdout of the debug adapter process.
@@ -113,7 +119,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
 // Thread to write to the stdin of the debug adapter process
 fn writer_loop(mut writer: impl Write, rx: &Receiver<AdapterMessage>) -> Result<()> {
     for request in rx {
-        let request = serde_json::to_string_pretty(&request)?;
+        let request = serde_json::to_string(&request)?;
         debug!("To debug adapter: {}", request);
         write!(
             writer,

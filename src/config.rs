@@ -3,7 +3,7 @@ use regex::{Captures, Regex};
 use serde::Deserialize;
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub adapter: String,
     pub adapter_args: Vec<String>,
