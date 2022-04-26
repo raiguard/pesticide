@@ -11,12 +11,17 @@ pub enum AdapterMessage {
     Response(Response),
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Empty {}
+
 // EVENTS
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "event")]
 #[serde(rename_all = "lowercase")]
 pub enum Event {
+    Initialized(EventPayload<Empty>),
     Output(EventPayload<OutputEvent>),
 }
 
@@ -66,6 +71,7 @@ pub enum OutputEventGroup {
 #[serde(rename_all = "lowercase")]
 pub enum Request {
     Initialize(RequestPayload<InitializeRequest>),
+    Launch(RequestPayload<Value>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -77,16 +83,15 @@ pub struct RequestPayload<T> {
 
 // Initialize
 
-fn default_as_true() -> bool {
-    true
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeRequest {
     #[serde(rename = "clientID")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
     #[serde(default = "default_as_true")]
     pub lines_start_at_1: bool,
@@ -94,18 +99,25 @@ pub struct InitializeRequest {
     pub columns_start_at_1: bool,
     pub path_format: Option<InitializeRequestPathFormat>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_variable_type: bool,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_variable_paging: bool,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_run_in_terminal_request: bool,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_memory_references: bool,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_progress_reporting: bool,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_invalidated_event: bool,
     #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
     pub supports_memory_event: bool,
 }
 
@@ -381,6 +393,16 @@ pub enum SourcePresentationHint {
     Normal,
     Emphasize,
     Deemphasize,
+}
+
+// UTILITIES
+
+fn default_as_true() -> bool {
+    true
+}
+
+fn is_false(boolean: &bool) -> bool {
+    !boolean
 }
 
 // TESTS

@@ -79,21 +79,35 @@ fn main() -> Result<()> {
                             }
                         }
                     }
+                    Event::Initialized(_) => {
+                        info!("Debug adapter is initialized");
+                    }
                 },
                 AdapterMessage::Request(req) => debug!("RECEIVED REQUEST: {:#?}", req),
                 // TODO: Response state - right now it will fail to deserialize if it did not succeed
                 // See https://github.com/serde-rs/serde/pull/2056#issuecomment-1109389651
                 AdapterMessage::Response(res) => match res {
                     Response::Initialize(payload) => {
-                        event_adapter.lock().unwrap().capabilities = payload.body;
-                        trace!("Saved capabilities to Adapter");
+                        // Save capabilities to Adapter
+                        let mut adapter = event_adapter.lock().unwrap();
+                        adapter.capabilities = payload.body;
+
+                        // Send launch request
+                        // This differs from how the DAP event order is specified on the DAP website
+                        // See https://github.com/microsoft/vscode/issues/4902#issuecomment-368583522
+                        let seq = adapter.next_seq();
+                        adapter
+                            .tx
+                            .send(AdapterMessage::Request(Request::Launch(RequestPayload {
+                                args: Some(adapter.config.launch_args.clone()),
+                                seq,
+                            })))
+                            .unwrap();
                     }
                 },
             }
         }
     });
-
-    thread::sleep(std::time::Duration::from_millis(100));
 
     // Send initialize request
     let init = AdapterMessage::Request(Request::Initialize(RequestPayload {
@@ -112,7 +126,7 @@ fn main() -> Result<()> {
             supports_invalidated_event: false,
             supports_memory_event: false,
         }),
-        seq: adapter.lock().unwrap().next_seq(),
+        seq: 0,
     }));
 
     adapter.lock().unwrap().tx.send(init)?;

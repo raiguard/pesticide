@@ -8,8 +8,8 @@ pub struct Config {
     pub adapter: String,
     pub adapter_args: Vec<String>,
     pub adapter_id: Option<String>,
-    // This will be passed to the debug adapter as JSON, and will be different for every adapter
-    pub launch_args: toml::Value,
+    // This is different for every debug adapter and so cannot be strictly typed
+    pub launch_args: serde_json::Value,
 }
 
 impl Config {
