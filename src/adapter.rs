@@ -1,7 +1,7 @@
 use crate::config::Config;
+use crate::dap_types::AdapterMessage;
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::{Receiver, Sender};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -9,10 +9,9 @@ use std::thread;
 
 pub struct Adapter {
     pub child: Child,
-    pub rx: Receiver<Value>,
-    pub tx: Sender<Value>,
-
-    next_seq: u32,
+    pub rx: Receiver<AdapterMessage>,
+    pub tx: Sender<AdapterMessage>,
+    pub next_seq: u32,
 }
 
 impl Adapter {
@@ -41,7 +40,7 @@ impl Adapter {
         });
 
         let stdout = BufReader::new(child.stdout.take().context("Failed to open stdout")?);
-        let (out_tx, out_rx): (Sender<Value>, Receiver<Value>) = crossbeam_channel::bounded(1024);
+        let (out_tx, out_rx) = crossbeam_channel::bounded(1024);
         thread::spawn(move || {
             reader_loop(stdout, &out_tx).expect("Failed to read message from debug adapter");
         });
@@ -56,14 +55,13 @@ impl Adapter {
             child,
             rx: out_rx,
             tx: in_tx,
-
             next_seq: 0,
         })
     }
 }
 
 // Thread to read the stdout of the debug adapter process.
-fn reader_loop(mut reader: impl BufRead, tx: &Sender<Value>) -> Result<()> {
+fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<()> {
     let mut headers = HashMap::new();
     loop {
         // Parse headers
@@ -94,22 +92,18 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<Value>) -> Result<()> {
         let mut content = vec![0; content_len];
         reader.read_exact(&mut content)?;
         let content = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
-        let msg: Value = serde_json::from_str(&content).unwrap();
-        debug!(
-            "From debug adapter: {}",
-            // TEMPORARY:
-            serde_json::to_string_pretty(&msg)?
-        );
-
-        if let Some(obj_type) = msg["type"].as_str() {
-            tx.send(msg)
-                .expect("Failed to send message from debug adapter");
+        debug!("From debug adapter: {}", content);
+        match AdapterMessage::from(&content) {
+            Ok(msg) => tx
+                .send(msg)
+                .expect("Failed to send message from debug adapter"),
+            Err(err) => error!("{}", err),
         }
     }
 }
 
 // Thread to write to the stdin of the debug adapter process
-fn writer_loop(mut writer: impl Write, rx: &Receiver<Value>) -> Result<()> {
+fn writer_loop(mut writer: impl Write, rx: &Receiver<AdapterMessage>) -> Result<()> {
     for request in rx {
         let request = serde_json::to_string(&request)?;
         write!(

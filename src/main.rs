@@ -7,15 +7,11 @@ extern crate log;
 
 use anyhow::Result;
 use pico_args::Arguments;
-use serde::Deserialize;
 use simplelog::{
     ColorChoice, Config as SLConfig, LevelFilter, TermLogger, TerminalMode, WriteLogger,
 };
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::thread;
 
 use crate::adapter::Adapter;
 use crate::config::Config;
@@ -59,31 +55,32 @@ fn main() -> Result<()> {
     let config = Config::new(&cli.config)?;
 
     // Initialize adapter
-    let adapter = Arc::new(Mutex::new(Adapter::new(config)?));
+    let mut adapter = Adapter::new(config)?;
 
     // Handle incoming messages
-    let read_adapter = adapter.clone();
-    thread::spawn(move || {
-        for msg in &read_adapter.lock().unwrap().rx {
-            println!("{msg}");
-            // match msg["type"].as_str().unwrap() {
-            //     EVENT => match msg["event"].as_str().unwrap() {
-            //         InitializedEvent::TYPE => (),
-            //         OutputEvent::TYPE => {
-            //             let body = OutputEventBody::deserialize(&msg["body"]).unwrap();
-            //             if let Some(category) = body.category {
-            //                 match category {
-            //                     OutputEventCategory::Telemetry => (), // We careth not about telemetry
-            //                     _ => println!("{}", body.output),
-            //                 }
-            //             }
-            //         }
-            //         _ => error!("Unrecognized event"),
-            //     },
-            //     _ => error!("Unrecognized payload"),
-            // }
+    for msg in &adapter.rx {
+        match msg {
+            AdapterMessage::Event(payload) => {
+                // TODO: Handle this automatically
+                adapter.next_seq = payload.seq + 1;
+
+                if let Some(body) = payload.body {
+                    match body {
+                        EventBody::Output(body) => match body.category {
+                            Some(OutputEventCategory::Telemetry) => {
+                                info!("IDGAF about telemetry")
+                            } // IDGAF about telemetry
+                            _ => info!("Debug adapter message: {}", body.output),
+                        },
+                        EventBody::Unknown(_) => todo!(),
+                    }
+                }
+            }
+            AdapterMessage::Unknown(payload) => {
+                warn!("Received unknown payload from debug adapter: {}", payload)
+            }
         }
-    });
+    }
 
     Ok(())
 }

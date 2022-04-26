@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AdapterMessage {
     Event(EventPayload),
@@ -56,11 +57,12 @@ impl AdapterMessage {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventPayload {
-    body: Option<EventBody>,
-    event: String,
-    seq: u32,
+    pub body: Option<EventBody>,
+    pub event: String,
+    pub seq: u32,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum EventBody {
     Output(OutputEventBody),
