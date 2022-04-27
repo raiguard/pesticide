@@ -130,7 +130,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                     handle_exited(&mut adapter);
                     return;
                 }
-                _ => error!("Unrecognized command: '{}'", cmd),
+                _ => eprintln!("Unrecognized command: '{}'", cmd),
             }
         }
     });
