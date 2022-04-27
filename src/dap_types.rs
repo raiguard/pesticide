@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -68,10 +69,11 @@ pub enum OutputEventGroup {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "command")]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Request {
     Initialize(RequestPayload<InitializeRequest>),
     Launch(RequestPayload<Value>),
+    RunInTerminal(RequestPayload<RunInTerminalRequest>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -92,6 +94,7 @@ pub struct InitializeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "adapterID")]
     pub adapter_id: Option<String>,
     #[serde(default = "default_as_true")]
     pub lines_start_at_1: bool,
@@ -128,13 +131,45 @@ pub enum InitializeRequestPathFormat {
     Uri,
 }
 
+// RunInTerminal
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunInTerminalRequest {
+    // What kind of terminal to launch.
+    pub kind: RunInTerminalKind,
+
+    // Optional title of the terminal.
+    pub title: Option<String>,
+
+    // Working directory for the command. For non-empty, valid paths this
+    // typically results in execution of a change directory command.
+    pub cwd: String,
+
+    // List of arguments. The first argument is the command to run.
+    pub args: Vec<String>,
+
+    // Environment key-value pairs that are added to or removed from the default
+    //  environment.
+    pub env: Option<HashMap<String, String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunInTerminalKind {
+    External,
+    Integrated,
+}
+
 // RESPONSES
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "command")]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Response {
     Initialize(ResponsePayload<Capabilities>),
+    Launch(ResponsePayload<Empty>),
+    RunInTerminal(ResponsePayload<RunInTerminalResponse>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -142,8 +177,19 @@ pub struct ResponsePayload<T> {
     pub seq: u32,
     pub request_seq: u32,
     pub success: bool,
+    // An optional error message if `success` is false
     pub message: Option<String>,
     pub body: Option<T>,
+}
+
+// RunInTerminal
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RunInTerminalResponse {
+    #[serde(rename = "processID")]
+    pub process_id: Option<u32>,
+    #[serde(rename = "shellProcessID")]
+    pub shell_process_id: Option<u32>,
 }
 
 // TYPES
@@ -454,17 +500,10 @@ mod tests {
               "arguments": {
                 "clientID": "pesticide",
                 "clientName": "Pesticide",
-                "adapterId": "pydbg",
+                "adapterID": "pydbg",
                 "linesStartAt1": true,
                 "columnsStartAt1": true,
-                "pathFormat": "path",
-                "supportsVariableType": false,
-                "supportsVariablePaging": false,
-                "supportsRunInTerminalRequest": false,
-                "supportsMemoryReferences": false,
-                "supportsProgressReporting": false,
-                "supportsInvalidatedEvent": false,
-                "supportsMemoryEvent": false
+                "pathFormat": "path"
               }
             }
         "#;
