@@ -101,8 +101,8 @@ fn main() -> Result<()> {
                         event_adapter.lock().unwrap().tx.send(req).unwrap();
                     }
                 },
-                AdapterMessage::Request(req) => match req {
-                    Request::RunInTerminal(payload) => {
+                AdapterMessage::Request(req) => {
+                    if let Request::RunInTerminal(payload) = req {
                         if let Some(args) = payload.args {
                             let mut cmd_args = args.args;
                             cmd_args.insert(0, "--".to_string());
@@ -143,8 +143,7 @@ fn main() -> Result<()> {
                             adapter.tx.send(res).unwrap();
                         }
                     }
-                    _ => (), // There are few requests that we will receive from the adapter
-                },
+                }
                 // TODO: Response state - right now it will fail to deserialize if it did not succeed
                 // See https://github.com/serde-rs/serde/pull/2056#issuecomment-1109389651
                 AdapterMessage::Response(res) => match res {
