@@ -44,7 +44,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                     Event::Process(_) => (), // TODO: What is this event useful for?
                     Event::Stopped(event) => {
                         if let Some(body) = event.body {
-                            info!("STOPPED on thread {}", body.thread_id);
+                            println!("STOPPED on thread {}: {:?}", body.thread_id, body.reason);
                         }
                     }
                     Event::Thread(event) => {
