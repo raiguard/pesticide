@@ -1,22 +1,23 @@
+use crate::Cli;
 use anyhow::{Context, Result};
 use regex::{Captures, Regex};
 use serde::Deserialize;
-use std::path::PathBuf;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub adapter: String,
     pub adapter_args: Vec<String>,
     pub adapter_id: Option<String>,
+    pub term_cmd: Option<String>,
     // This is different for every debug adapter and so cannot be strictly typed
     pub launch_args: serde_json::Value,
 }
 
 impl Config {
-    pub fn new(path: &Option<PathBuf>) -> Result<Self> {
+    pub fn new(cli: Cli) -> Result<Self> {
         // Resolve path
-        let path = if let Some(config) = path {
-            config.clone()
+        let path = if let Some(config) = cli.config {
+            config
         } else {
             std::env::current_dir()?.join("pesticide.toml")
         };
@@ -33,9 +34,13 @@ impl Config {
         contents = contents.replace("$$", "$");
 
         // Create config object
-        let config: Config =
+        let mut config: Config =
             toml::from_str(&contents).context("Failed to parse configuration file")?;
-        debug!("{:#?}", config);
+        debug!("{:?}", config);
+
+        if cli.term_cmd.is_some() {
+            config.term_cmd = cli.term_cmd;
+        }
 
         Ok(config)
     }

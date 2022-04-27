@@ -2,10 +2,12 @@ adapter = "python"
 adapter_args = ["-m", "debugpy.adapter"]
 adapter_id = "pydbg"
 
+term_cmd = "kitty"
+
 [launch_args]
 program = "${PWD}/test.py"
 args = []
 stopOnEntry = true
-console = "integratedTerminal"
+console = "externalTerminal"
 debugOptions = []
 cwd = "${PWD}"

@@ -31,6 +31,7 @@ fn main() -> Result<()> {
     let cli = Cli {
         config: args.opt_value_from_str("--config")?,
         log: args.opt_value_from_str("--log")?,
+        term_cmd: args.opt_value_from_str("--term-cmd")?,
     };
 
     // Initialize logging
@@ -53,10 +54,10 @@ fn main() -> Result<()> {
         )?;
     };
 
-    debug!("{:#?}", cli);
+    debug!("{:?}", cli);
 
     // Retrieve local configuration
-    let config = Config::new(&cli.config)?;
+    let config = Config::new(cli)?;
 
     // Initialize adapter
     let adapter = Arc::new(Mutex::new(Adapter::new(config.clone())?));
@@ -103,17 +104,19 @@ fn main() -> Result<()> {
                 AdapterMessage::Request(req) => match req {
                     Request::RunInTerminal(payload) => {
                         if let Some(args) = payload.args {
-                            let mut cmd_args: VecDeque<String> = args.args.into();
-                            let cmd = cmd_args
-                                .pop_front()
-                                .expect("Debug adapter did not provide a command to run");
-                            // TEMPORARY: Use the terminal we are currently in as the "integrated terminal"
-                            let cmd = Command::new(cmd)
-                                .args(cmd_args)
-                                .stdin(Stdio::piped())
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::piped())
-                                .spawn();
+                            let mut cmd_args = args.args;
+                            cmd_args.insert(0, "--".to_string());
+                            let cmd = Command::new(
+                                &event_adapter
+                                    .lock()
+                                    .unwrap()
+                                    .config
+                                    .term_cmd
+                                    .clone()
+                                    .unwrap(),
+                            )
+                            .args(cmd_args)
+                            .spawn();
 
                             let (success, message) = match &cmd {
                                 Ok(_) => (true, None),
@@ -206,9 +209,10 @@ fn main() -> Result<()> {
 }
 
 #[derive(Debug)]
-struct Cli {
+pub struct Cli {
     config: Option<PathBuf>,
     log: Option<PathBuf>,
+    term_cmd: Option<String>,
 }
 
 const HELP: &str = "\
