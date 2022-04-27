@@ -2,6 +2,7 @@ mod adapter;
 mod config;
 mod controller;
 mod dap_types;
+mod types;
 
 #[macro_use]
 extern crate log;
@@ -49,6 +50,7 @@ fn main() -> Result<()> {
     // Initialize adapter
     let adapter = Arc::new(Mutex::new(Adapter::new(config)?));
 
+    // Start debugging session
     controller::start(adapter)?;
 
     Ok(())

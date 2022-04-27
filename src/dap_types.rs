@@ -26,6 +26,7 @@ pub enum Event {
     Initialized(EventPayload<Empty>),
     Output(EventPayload<OutputEvent>),
     Process(EventPayload<ProcessEvent>),
+    Thread(EventPayload<ThreadEvent>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -82,23 +83,23 @@ pub enum OutputEventGroup {
 pub struct ProcessEvent {
     // The logical name of the process. This is usually the full path to
     // process's executable file. _example: /home/example/myproj/program.js.
-    name: String,
+    pub name: String,
 
     // The system process id of the debugged process. This property will be
     // missing for non-system processes.
-    system_process_id: Option<u32>,
+    pub system_process_id: Option<u32>,
 
     // If true, the process is running on the same computer as the debug
     // adapter.
     #[serde(default)]
-    is_local_process: bool,
+    pub is_local_process: bool,
 
     // Describes how the debug engine started debugging this process.
-    start_method: Option<ProcessStartMethod>,
+    pub start_method: Option<ProcessStartMethod>,
 
     // The size of a pointer or address for this process, in bits. This value
     // may be used by clients when formatting addresses for display.
-    pointer_size: u32,
+    pub pointer_size: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -110,6 +111,25 @@ pub enum ProcessStartMethod {
     AttachForSuspendedLaunch,
     // Process was launched under the debugger.
     Launch,
+}
+
+// Thread
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadEvent {
+    // The reason for the event.
+    pub reason: ThreadReason,
+
+    // The identifier of the thread.
+    pub thread_id: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThreadReason {
+    Started,
+    Exited,
 }
 
 // REQUESTS

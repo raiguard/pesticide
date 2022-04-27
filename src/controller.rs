@@ -1,5 +1,6 @@
 use crate::adapter::Adapter;
 use crate::dap_types::*;
+use crate::types::*;
 use anyhow::Result;
 use std::io::Write;
 use std::process::Command;
@@ -41,10 +42,28 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                         adapter.tx.send(req).unwrap();
                     }
                     Event::Process(_) => (), // TODO: What is this event useful for?
+                    Event::Thread(event) => {
+                        if let Some(body) = event.body {
+                            info!("New thread started: {}", body.thread_id);
+                            match body.reason {
+                                ThreadReason::Started => {
+                                    adapter.threads.insert(body.thread_id, Thread {});
+                                }
+                                ThreadReason::Exited => {
+                                    if adapter.threads.remove(&body.thread_id).is_none() {
+                                        error!(
+                                            "Thread {} ended, but had no stored data",
+                                            body.thread_id
+                                        )
+                                    }
+                                }
+                            };
+                        }
+                    }
                 },
                 AdapterMessage::Request(req) => {
-                    if let Request::RunInTerminal(payload) = req {
-                        if let Some(mut args) = payload.args {
+                    if let Request::RunInTerminal(req) = req {
+                        if let Some(mut args) = req.args {
                             let mut term_cmd = adapter.config.term_cmd.clone();
                             term_cmd.append(&mut args.args);
 
@@ -64,7 +83,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                             let res = AdapterMessage::Response(Response::RunInTerminal(
                                 ResponsePayload {
                                     seq: adapter.next_seq(),
-                                    request_seq: payload.seq,
+                                    request_seq: req.seq,
                                     success,
                                     message,
                                     body: Some(RunInTerminalResponse {
@@ -80,10 +99,10 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                 }
                 AdapterMessage::Response(res) => match res {
                     Response::ConfigurationDone(_) => (),
-                    Response::Initialize(payload) => {
+                    Response::Initialize(res) => {
                         // Save capabilities to Adapter
                         let mut adapter = adapter;
-                        adapter.capabilities = payload.body;
+                        adapter.capabilities = res.body;
 
                         // Send launch request
                         // This differs from how the DAP event order is specified on the DAP website
@@ -97,12 +116,12 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                             })))
                             .unwrap();
                     }
-                    Response::Launch(payload) => {
-                        if payload.success {
+                    Response::Launch(res) => {
+                        if res.success {
                         } else {
                             error!(
                                 "Could not launch debug adapter: {}",
-                                payload.message.unwrap_or_default()
+                                res.message.unwrap_or_default()
                             );
                         }
                     }
