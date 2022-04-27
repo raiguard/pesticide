@@ -38,7 +38,7 @@ impl Adapter {
             if buf.is_empty() {
                 continue;
             }
-            error!("Debug adapter: {}", buf);
+            error!("[DEBUG ADAPTER] >> {}", buf);
         });
 
         let stdout = BufReader::new(child.stdout.take().context("Failed to open stdout")?);
@@ -108,12 +108,12 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
         let mut content = vec![0; content_len];
         reader.read_exact(&mut content)?;
         let content = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
-        debug!("From debug adapter: {}", content);
+        debug!("[DEBUG ADAPTER] >> {}", content);
         match serde_json::from_str::<AdapterMessage>(&content) {
             Ok(msg) => tx
                 .send(msg)
                 .expect("Failed to send message from debug adapter"),
-            Err(e) => error!("Could not parse response from debug adapter: {}", e),
+            Err(e) => error!("[DEBUG ADAPTER] >> {}", e),
         }
     }
 }
@@ -122,7 +122,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
 fn writer_loop(mut writer: impl Write, rx: &Receiver<AdapterMessage>) -> Result<()> {
     for request in rx {
         let request = serde_json::to_string(&request)?;
-        debug!("To debug adapter: {}", request);
+        debug!("[DEBUG ADAPTER] << {}", request);
         write!(
             writer,
             "Content-Length: {}\r\n\r\n{}",
