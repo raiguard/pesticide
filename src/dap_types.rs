@@ -212,6 +212,7 @@ pub enum Request {
     Launch(RequestPayload<Value>),
     RunInTerminal(RequestPayload<RunInTerminalRequest>),
     SetBreakpoints(RequestPayload<SetBreakpointsRequest>),
+    StepIn(RequestPayload<StepInRequest>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -320,6 +321,39 @@ pub struct SetBreakpointsRequest {
     source_modified: bool,
 }
 
+/// The request resumes the given thread to step into a function/method and allows all other threads to run freely by resuming them.
+///
+/// If the debug adapter supports single thread execution (see capability ‘supportsSingleThreadExecutionRequests’) setting the ‘singleThread’ argument to true prevents other suspended threads from resuming.
+///
+/// If the request cannot step into a target, ‘stepIn’ behaves like the ‘next’ request.
+///
+/// The debug adapter first sends the response and then a ‘stopped’ event (with reason ‘step’) after the step has completed.
+///
+/// If there are multiple function/method calls (or other targets) on the source line,
+///
+/// the optional argument ‘targetId’ can be used to control into which target the ‘stepIn’ should occur.
+///
+/// The list of possible targets for a given source line can be retrieved via the ‘stepInTargets’ request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepInRequest {
+    /// Specifies the thread for which to resume execution for one step-into (of
+    /// the given granularity).
+    pub thread_id: u32,
+
+    /// If this optional flag is true, all other suspended threads are not resumed.
+    #[serde(default)]
+    pub single_thread: bool,
+
+    /// Optional id of the target to step into.
+    pub target_id: Option<u32>,
+
+    /// Optional granularity to step. If no granularity is specified, a granularity
+    /// of 'Statement' is assumed.
+    #[serde(default = "stepping_granularity_default")]
+    pub granularity: SteppingGranularity,
+}
+
 // RESPONSES
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -330,6 +364,7 @@ pub enum Response {
     Initialize(ResponsePayload<Capabilities>),
     Launch(ResponsePayload<Empty>),
     RunInTerminal(ResponsePayload<RunInTerminalResponse>),
+    StepIn(ResponsePayload<Empty>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -536,6 +571,30 @@ pub struct Capabilities {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Checksum {
+    pub algorithm: ChecksumAlgorithm,
+    pub checksum: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ChecksumAlgorithm {
+    MD5,
+    SHA1,
+    SHA256,
+    #[serde(rename = "lowercase")]
+    Timestamp,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SourcePresentationHint {
+    Normal,
+    Emphasize,
+    Deemphasize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExceptionBreakpointsFilter {
     // The internal ID of the filter option. This value is passed to the
     // 'setExceptionBreakpoints' request.
@@ -606,28 +665,26 @@ pub struct SourceBreakpoint {
     pub log_message: Option<String>,
 }
 
+/// The granularity of one 'step' in the stepping requests 'next', 'stepIn',
+/// 'stepOut', and 'stepBack'.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Checksum {
-    pub algorithm: ChecksumAlgorithm,
-    pub checksum: String,
+pub enum SteppingGranularity {
+    /// The step should allow the program to run until the current statement
+    /// has finished executing. The meaning of a statement is determined by
+    /// the adapter and it may be considered equivalent to a line. For example,
+    /// `for(int i = 0; i < 10; i++)` could be considered to have 3 statements:
+    /// `int i = 0`, `i < 10`, and `i++`.
+    Statement,
+    /// The step should allow the program to run until the current source line
+    /// has executed.
+    Line,
+    /// The step should allow one instruction to execute (e.g. one x86
+    /// instruction). etc.
+    Instruction,
 }
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum ChecksumAlgorithm {
-    MD5,
-    SHA1,
-    SHA256,
-    #[serde(rename = "lowercase")]
-    Timestamp,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SourcePresentationHint {
-    Normal,
-    Emphasize,
-    Deemphasize,
+// This is ugly and sad
+fn stepping_granularity_default() -> SteppingGranularity {
+    SteppingGranularity::Statement
 }
 
 // UTILITIES

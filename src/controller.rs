@@ -131,6 +131,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                         }
                     }
                     Response::RunInTerminal(_) => (),
+                    Response::StepIn(_) => (),
                 },
             }
         }
@@ -151,6 +152,19 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
 
             let cmd = cmd.trim();
             match cmd {
+                "in" | "stepin" => {
+                    let req = AdapterMessage::Request(Request::StepIn(RequestPayload {
+                        seq: adapter.next_seq(),
+                        args: Some(StepInRequest {
+                            thread_id: 1, // TEMPORARY:
+                            single_thread: false,
+                            target_id: None,
+                            granularity: SteppingGranularity::Statement,
+                        }),
+                    }));
+
+                    adapter.tx.send(req).unwrap();
+                }
                 "exit" => {
                     handle_exited(&mut adapter);
                     return;
