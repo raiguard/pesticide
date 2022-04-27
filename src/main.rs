@@ -8,11 +8,9 @@ extern crate log;
 
 use crate::adapter::Adapter;
 use crate::config::Config;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use pico_args::Arguments;
-use simplelog::{
-    ColorChoice, Config as SLConfig, LevelFilter, TermLogger, TerminalMode, WriteLogger,
-};
+use simplelog::{Config as SLConfig, LevelFilter, WriteLogger};
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -30,24 +28,18 @@ fn main() -> Result<()> {
     };
 
     // Initialize logging
-    if let Some(path) = &cli.log {
-        WriteLogger::init(LevelFilter::Debug, SLConfig::default(), File::create(path)?)?;
+    let path = if let Some(path) = &cli.log {
+        path.clone()
     } else {
-        // let data_dir = dirs::data_dir()
-        //     .ok_or_else(|| anyhow!("Could not resolve OS data directory"))?
-        //     .join("pesticide");
-        // if !data_dir.exists() {
-        //     std::fs::create_dir(data_dir.clone())?;
-        // }
-        // data_dir.join("pesticide.log")
-        // TEMPORARY:
-        TermLogger::init(
-            LevelFilter::Trace,
-            SLConfig::default(),
-            TerminalMode::Stdout,
-            ColorChoice::Auto,
-        )?;
+        let data_dir = dirs::data_dir()
+            .ok_or_else(|| anyhow!("Could not resolve OS data directory"))?
+            .join("pesticide");
+        if !data_dir.exists() {
+            std::fs::create_dir(data_dir.clone())?;
+        }
+        data_dir.join("pesticide.log")
     };
+    WriteLogger::init(LevelFilter::Debug, SLConfig::default(), File::create(path)?)?;
 
     debug!("{:?}", cli);
 
