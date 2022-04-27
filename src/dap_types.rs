@@ -22,6 +22,7 @@ pub struct Empty {}
 #[serde(tag = "event")]
 #[serde(rename_all = "lowercase")]
 pub enum Event {
+    Exited(EventPayload<ExitedEvent>),
     Initialized(EventPayload<Empty>),
     Output(EventPayload<OutputEvent>),
 }
@@ -30,6 +31,14 @@ pub enum Event {
 pub struct EventPayload<T> {
     pub seq: u32,
     pub body: Option<T>,
+}
+
+// Exited
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExitedEvent {
+    pub exit_code: u32,
 }
 
 // Output

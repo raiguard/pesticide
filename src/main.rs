@@ -68,6 +68,13 @@ fn main() -> Result<()> {
         for msg in event_rx {
             match msg {
                 AdapterMessage::Event(event) => match event {
+                    Event::Exited(_) => {
+                        // Stop the adapter
+                        if let Err(e) = event_adapter.lock().unwrap().child.kill() {
+                            error!("Failed to kill debug adapter: {}", e)
+                        }
+                        // Pesticide will exit due to the debug adapter pipe closing
+                    }
                     Event::Output(payload) => {
                         trace!("Updating seq");
                         event_adapter.lock().unwrap().update_seq(payload.seq);
