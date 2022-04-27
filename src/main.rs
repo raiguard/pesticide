@@ -63,6 +63,6 @@ pub struct Cli {
 const HELP: &str = "\
 usage: pesticide [options]
 options:
-    --config <PATH>  Path to the pesticide.toml file (defaults to PWD/pesticide.toml)
+    --config <PATH>  Path to the pesticide.toml file (defaults to $PWD/pesticide.toml)
     --help           Print help information
-    --log <PATH>     Write log to the given file (defaults to STDOUT)";
+    --log <PATH>     Write log to the given file (defaults to $HOME/.local/share/pesticide/pesticide.log)";
