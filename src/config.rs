@@ -1,5 +1,5 @@
 use crate::Cli;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use regex::{Captures, Regex};
 use serde::Deserialize;
 
@@ -8,7 +8,7 @@ pub struct Config {
     pub adapter: String,
     pub adapter_args: Vec<String>,
     pub adapter_id: Option<String>,
-    pub term_cmd: Option<String>,
+    pub term_cmd: Vec<String>,
     // This is different for every debug adapter and so cannot be strictly typed
     pub launch_args: serde_json::Value,
 }
@@ -34,12 +34,12 @@ impl Config {
         contents = contents.replace("$$", "$");
 
         // Create config object
-        let mut config: Config =
+        let config: Config =
             toml::from_str(&contents).context("Failed to parse configuration file")?;
         debug!("{:?}", config);
 
-        if cli.term_cmd.is_some() {
-            config.term_cmd = cli.term_cmd;
+        if config.term_cmd.is_empty() {
+            bail!("term_cmd may not be empty");
         }
 
         Ok(config)

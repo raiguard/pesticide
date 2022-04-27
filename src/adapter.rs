@@ -113,7 +113,7 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
             Ok(msg) => tx
                 .send(msg)
                 .expect("Failed to send message from debug adapter"),
-            Err(e) => error!("[DEBUG ADAPTER] >> {}", e),
+            Err(e) => error!("[ADAPTER RX] {}", e),
         }
     }
 }

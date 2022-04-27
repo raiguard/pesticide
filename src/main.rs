@@ -5,15 +5,14 @@ mod dap_types;
 #[macro_use]
 extern crate log;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use pico_args::Arguments;
 use simplelog::{
     ColorChoice, Config as SLConfig, LevelFilter, TermLogger, TerminalMode, WriteLogger,
 };
-use std::collections::VecDeque;
 use std::fs::File;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -31,7 +30,6 @@ fn main() -> Result<()> {
     let cli = Cli {
         config: args.opt_value_from_str("--config")?,
         log: args.opt_value_from_str("--log")?,
-        term_cmd: args.opt_value_from_str("--term-cmd")?,
     };
 
     // Initialize logging
@@ -57,7 +55,7 @@ fn main() -> Result<()> {
     debug!("{:?}", cli);
 
     // Retrieve local configuration
-    let config = Config::new(cli)?;
+    let config = Config::new(cli).context("Invalid configuration file")?;
 
     // Initialize adapter
     let adapter = Arc::new(Mutex::new(Adapter::new(config.clone())?));
@@ -103,20 +101,14 @@ fn main() -> Result<()> {
                 },
                 AdapterMessage::Request(req) => {
                     if let Request::RunInTerminal(payload) = req {
-                        if let Some(args) = payload.args {
-                            let mut cmd_args = args.args;
-                            cmd_args.insert(0, "--".to_string());
-                            let cmd = Command::new(
-                                &event_adapter
-                                    .lock()
-                                    .unwrap()
-                                    .config
-                                    .term_cmd
-                                    .clone()
-                                    .unwrap(),
-                            )
-                            .args(cmd_args)
-                            .spawn();
+                        if let Some(mut args) = payload.args {
+                            let mut term_cmd =
+                                event_adapter.lock().unwrap().config.term_cmd.clone();
+                            term_cmd.append(&mut args.args);
+
+                            let cmd = Command::new(term_cmd[0].clone())
+                                .args(term_cmd[1..].to_vec())
+                                .spawn();
 
                             let (success, message) = match &cmd {
                                 Ok(_) => (true, None),
@@ -209,7 +201,6 @@ fn main() -> Result<()> {
 pub struct Cli {
     config: Option<PathBuf>,
     log: Option<PathBuf>,
-    term_cmd: Option<String>,
 }
 
 const HELP: &str = "\
