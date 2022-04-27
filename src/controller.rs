@@ -1,6 +1,7 @@
 use crate::adapter::Adapter;
 use crate::dap_types::*;
 use anyhow::Result;
+use std::io::Write;
 use std::process::Command;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, thread};
@@ -114,7 +115,10 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     let cli_adapter = adapter.clone();
     let cli_loop = thread::spawn(move || {
         let stdin = io::stdin();
+        let stdout = std::io::stdout();
         loop {
+            print!("> ");
+            stdout.lock().flush().unwrap();
             let mut cmd = String::new();
             stdin.read_line(&mut cmd).expect("Failed to read stdin");
 
