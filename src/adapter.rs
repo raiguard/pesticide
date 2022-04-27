@@ -68,6 +68,7 @@ impl Adapter {
         })
     }
 
+    // TODO: seq is getting out of sync somehow
     pub fn next_seq(&mut self) -> u32 {
         let seq = self.next_seq;
         self.next_seq += 1;
