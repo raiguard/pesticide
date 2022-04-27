@@ -1,3 +1,5 @@
+// TODO: Fix non-doc comments and add missing comments
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -26,6 +28,7 @@ pub enum Event {
     Initialized(EventPayload<Empty>),
     Output(EventPayload<OutputEvent>),
     Process(EventPayload<ProcessEvent>),
+    Stopped(EventPayload<StoppedEvent>),
     Thread(EventPayload<ThreadEvent>),
 }
 
@@ -107,10 +110,76 @@ pub struct ProcessEvent {
 pub enum ProcessStartMethod {
     // Debugger attached to an existing process.
     Attach,
-    // A project launcher component has launched a new process in a suspended state and then asked the debugger to attach.
+    // A project launcher component has launched a new process in a suspended
+    // state and then asked the debugger to attach.
     AttachForSuspendedLaunch,
     // Process was launched under the debugger.
     Launch,
+}
+
+// Stopped
+
+/// The event indicates that the execution of the debuggee has stopped due to
+/// some condition.
+///
+/// This can be caused by a break point previously set, a stepping request has
+/// completed, by executing a debugger statement etc.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoppedEvent {
+    /// The reason for the event.
+    /// For backward compatibility this string is shown in the UI if the
+    /// 'description' attribute is missing (but it must not be translated).
+    pub reason: StoppedReason,
+
+    /// The full reason for the event, e.g. 'Paused on exception'. This string is
+    /// shown in the UI as is and must be translated.
+    pub description: Option<String>,
+
+    /// The thread which was stopped.
+    pub thread_id: u32,
+
+    /// A value of true hints to the frontend that this event should not change
+    /// the focus.
+    #[serde(default)]
+    pub preserve_focus_hint: bool,
+
+    /// Additional information. E.g. if reason is 'exception', text contains the
+    /// exception name. This string is shown in the UI.
+    pub text: Option<String>,
+
+    /// If 'allThreadsStopped' is true, a debug adapter can announce that all
+    /// threads have stopped.
+    /// - The client should use this information to enable that all threads can
+    /// be expanded to access their stacktraces.
+    /// - If the attribute is missing or false, only the thread with the given
+    /// threadId can be expanded.
+    #[serde(default)]
+    pub all_threads_stopped: bool,
+
+    /// Ids of the breakpoints that triggered the event. In most cases there will
+    /// be only a single breakpoint but here are some examples for multiple
+    /// breakpoints:
+    /// - Different types of breakpoints map to the same location.
+    /// - Multiple source breakpoints get collapsed to the same instruction by
+    /// the compiler/runtime.
+    /// - Multiple function breakpoints with different function names map to the
+    /// same location.
+    pub hit_breakpoint_ids: Option<Vec<u32>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StoppedReason {
+    Step,
+    Breakpoint,
+    Exception,
+    Pause,
+    Entry,
+    Goto,
+    FunctionBreakpoint,
+    DataBreakpoint,
+    InstructionBreakpoint,
 }
 
 // Thread

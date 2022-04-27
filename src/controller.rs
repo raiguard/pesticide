@@ -42,6 +42,11 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                         adapter.tx.send(req).unwrap();
                     }
                     Event::Process(_) => (), // TODO: What is this event useful for?
+                    Event::Stopped(event) => {
+                        if let Some(body) = event.body {
+                            info!("STOPPED on thread {}", body.thread_id);
+                        }
+                    }
                     Event::Thread(event) => {
                         if let Some(body) = event.body {
                             info!("New thread started: {}", body.thread_id);
