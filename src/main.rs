@@ -87,15 +87,13 @@ fn main() -> Result<()> {
                     }
                 },
                 AdapterMessage::Request(req) => match req {
-                    Request::Initialize(_) => (),
-                    Request::Launch(_) => (),
                     Request::RunInTerminal(payload) => {
                         if let Some(args) = payload.args {
                             let mut cmd_args: VecDeque<String> = args.args.into();
                             let cmd = cmd_args
                                 .pop_front()
                                 .expect("Debug adapter did not provide a command to run");
-                            // TEMPORARY: Use the terminal we are currently in as the external terminal
+                            // TEMPORARY: Use the terminal we are currently in as the "integrated terminal"
                             let cmd = Command::new(cmd)
                                 .args(cmd_args)
                                 .stdin(Stdio::piped())
@@ -128,6 +126,7 @@ fn main() -> Result<()> {
                             adapter.tx.send(res).unwrap();
                         }
                     }
+                    _ => (), // There are few requests that we will receive from the adapter
                 },
                 // TODO: Response state - right now it will fail to deserialize if it did not succeed
                 // See https://github.com/serde-rs/serde/pull/2056#issuecomment-1109389651

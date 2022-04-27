@@ -74,6 +74,7 @@ pub enum Request {
     Initialize(RequestPayload<InitializeRequest>),
     Launch(RequestPayload<Value>),
     RunInTerminal(RequestPayload<RunInTerminalRequest>),
+    SetBreakpoints(RequestPayload<SetBreakpointsRequest>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -159,6 +160,27 @@ pub struct RunInTerminalRequest {
 pub enum RunInTerminalKind {
     External,
     Integrated,
+}
+
+// SetBreakpoints
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetBreakpointsRequest {
+    // The source location of the breakpoints; either 'source.path' or
+    // 'source.reference' must be specified.
+    source: Source,
+
+    // The code locations of the breakpoints.
+    breakpoints: Vec<SourceBreakpoint>,
+
+    // Deprecated: The code locations of the breakpoints.
+    lines: Option<Vec<u32>>,
+
+    // A value of true indicates that the underlying source has been modified
+    // which results in new breakpoint locations.
+    #[serde(default)]
+    source_modified: bool,
 }
 
 // RESPONSES
@@ -415,6 +437,35 @@ pub struct Source {
     pub sources: Option<Vec<Source>>,
     pub adapter_data: Option<Value>,
     pub checksums: Option<Vec<Checksum>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceBreakpoint {
+    // The source line of the breakpoint or logpoint.
+    pub line: Option<u32>,
+
+    // An optional source column of the breakpoint.
+    pub column: Option<u32>,
+
+    // An optional expression for conditional breakpoints.
+    // It is only honored by a debug adapter if the capability
+    // 'supportsConditionalBreakpoints' is true.
+    pub condition: Option<String>,
+
+    // An optional expression that controls how many hits of the breakpoint are
+    // ignored.
+    // The backend is expected to interpret the expression as needed.
+    // The attribute is only honored by a debug adapter if the capability
+    // 'supportsHitConditionalBreakpoints' is true.
+    pub hit_condition: Option<String>,
+
+    // If this attribute exists and is non-empty, the backend must not 'break'
+    // (stop)
+    // but log the message instead. Expressions within {} are interpolated.
+    // The attribute is only honored by a debug adapter if the capability
+    // 'supportsLogPoints' is true.
+    pub log_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
