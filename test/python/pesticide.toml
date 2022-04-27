@@ -6,6 +6,6 @@ adapter_id = "pydbg"
 program = "${PWD}/test.py"
 args = []
 stopOnEntry = true
-console = "externalTerminal"
+console = "integratedTerminal"
 debugOptions = []
 cwd = "${PWD}"
