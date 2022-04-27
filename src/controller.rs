@@ -40,6 +40,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
 
                         adapter.tx.send(req).unwrap();
                     }
+                    Event::Process(_) => (), // TODO: What is this event useful for?
                 },
                 AdapterMessage::Request(req) => {
                     if let Request::RunInTerminal(payload) = req {

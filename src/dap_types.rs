@@ -25,6 +25,7 @@ pub enum Event {
     Exited(EventPayload<ExitedEvent>),
     Initialized(EventPayload<Empty>),
     Output(EventPayload<OutputEvent>),
+    Process(EventPayload<ProcessEvent>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -72,6 +73,43 @@ pub enum OutputEventGroup {
     Start,
     StartCollapsed,
     End,
+}
+
+// Process
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessEvent {
+    // The logical name of the process. This is usually the full path to
+    // process's executable file. _example: /home/example/myproj/program.js.
+    name: String,
+
+    // The system process id of the debugged process. This property will be
+    // missing for non-system processes.
+    system_process_id: Option<u32>,
+
+    // If true, the process is running on the same computer as the debug
+    // adapter.
+    #[serde(default)]
+    is_local_process: bool,
+
+    // Describes how the debug engine started debugging this process.
+    start_method: Option<ProcessStartMethod>,
+
+    // The size of a pointer or address for this process, in bits. This value
+    // may be used by clients when formatting addresses for display.
+    pointer_size: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcessStartMethod {
+    // Debugger attached to an existing process.
+    Attach,
+    // A project launcher component has launched a new process in a suspended state and then asked the debugger to attach.
+    AttachForSuspendedLaunch,
+    // Process was launched under the debugger.
+    Launch,
 }
 
 // REQUESTS
