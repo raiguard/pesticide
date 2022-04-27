@@ -1,8 +1,8 @@
 use crate::adapter::Adapter;
-use crate::{config, dap_types::*};
+use crate::dap_types::*;
 use anyhow::Result;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::{io, thread};
 
 pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
@@ -11,12 +11,13 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     let event_loop = thread::spawn(move || {
         let rx = event_adapter.lock().unwrap().rx.clone();
         for msg in rx {
+            let mut adapter = event_adapter.lock().unwrap();
             match msg {
                 AdapterMessage::Event(event) => match event {
-                    Event::Exited(_) => handle_exited(&event_adapter),
+                    Event::Exited(_) => handle_exited(&mut adapter),
                     Event::Output(payload) => {
                         trace!("Updating seq");
-                        event_adapter.lock().unwrap().update_seq(payload.seq);
+                        adapter.update_seq(payload.seq);
                         trace!("Updated seq");
                         if let Some(body) = payload.body {
                             match body.category {
@@ -32,18 +33,17 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                         // TODO: setBreakpoints, etc...
                         let req =
                             AdapterMessage::Request(Request::ConfigurationDone(RequestPayload {
-                                seq: event_adapter.lock().unwrap().next_seq(),
+                                seq: adapter.next_seq(),
                                 args: None,
                             }));
 
-                        event_adapter.lock().unwrap().tx.send(req).unwrap();
+                        adapter.tx.send(req).unwrap();
                     }
                 },
                 AdapterMessage::Request(req) => {
                     if let Request::RunInTerminal(payload) = req {
                         if let Some(mut args) = payload.args {
-                            let mut term_cmd =
-                                event_adapter.lock().unwrap().config.term_cmd.clone();
+                            let mut term_cmd = adapter.config.term_cmd.clone();
                             term_cmd.append(&mut args.args);
 
                             let cmd = Command::new(term_cmd[0].clone())
@@ -58,7 +58,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                                 }
                             };
 
-                            let mut adapter = event_adapter.lock().unwrap();
+                            let mut adapter = adapter;
                             let res = AdapterMessage::Response(Response::RunInTerminal(
                                 ResponsePayload {
                                     seq: adapter.next_seq(),
@@ -80,7 +80,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                     Response::ConfigurationDone(_) => (),
                     Response::Initialize(payload) => {
                         // Save capabilities to Adapter
-                        let mut adapter = event_adapter.lock().unwrap();
+                        let mut adapter = adapter;
                         adapter.capabilities = payload.body;
 
                         // Send launch request
@@ -118,9 +118,12 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
             let mut cmd = String::new();
             stdin.read_line(&mut cmd).expect("Failed to read stdin");
 
-            match cmd.trim() {
+            let mut adapter = cli_adapter.lock().unwrap();
+
+            let cmd = cmd.trim();
+            match cmd {
                 "exit" => {
-                    handle_exited(&cli_adapter);
+                    handle_exited(&mut adapter);
                     return;
                 }
                 _ => error!("Unrecognized command: '{}'", cmd),
@@ -159,9 +162,9 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     Ok(())
 }
 
-fn handle_exited(adapter: &Arc<Mutex<Adapter>>) {
+fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
     // Stop the adapter
-    if let Err(e) = adapter.lock().unwrap().child.kill() {
+    if let Err(e) = adapter.child.kill() {
         error!("Failed to kill debug adapter: {}", e)
     }
     // Pesticide will exit due to the debug adapter pipe closing
