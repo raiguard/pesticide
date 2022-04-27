@@ -71,6 +71,7 @@ pub enum OutputEventGroup {
 #[serde(tag = "command")]
 #[serde(rename_all = "camelCase")]
 pub enum Request {
+    ConfigurationDone(RequestPayload<Empty>),
     Initialize(RequestPayload<InitializeRequest>),
     Launch(RequestPayload<Value>),
     RunInTerminal(RequestPayload<RunInTerminalRequest>),
@@ -189,6 +190,7 @@ pub struct SetBreakpointsRequest {
 #[serde(tag = "command")]
 #[serde(rename_all = "camelCase")]
 pub enum Response {
+    ConfigurationDone(ResponsePayload<Empty>),
     Initialize(ResponsePayload<Capabilities>),
     Launch(ResponsePayload<Empty>),
     RunInTerminal(ResponsePayload<RunInTerminalResponse>),

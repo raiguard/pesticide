@@ -84,6 +84,13 @@ fn main() -> Result<()> {
                     Event::Initialized(_) => {
                         info!("Debug adapter is initialized");
                         // TODO: setBreakpoints, etc...
+                        let req =
+                            AdapterMessage::Request(Request::ConfigurationDone(RequestPayload {
+                                seq: event_adapter.lock().unwrap().next_seq(),
+                                args: None,
+                            }));
+
+                        event_adapter.lock().unwrap().tx.send(req).unwrap();
                     }
                 },
                 AdapterMessage::Request(req) => match req {
@@ -131,6 +138,7 @@ fn main() -> Result<()> {
                 // TODO: Response state - right now it will fail to deserialize if it did not succeed
                 // See https://github.com/serde-rs/serde/pull/2056#issuecomment-1109389651
                 AdapterMessage::Response(res) => match res {
+                    Response::ConfigurationDone(_) => (),
                     Response::Initialize(payload) => {
                         // Save capabilities to Adapter
                         let mut adapter = event_adapter.lock().unwrap();
@@ -156,7 +164,7 @@ fn main() -> Result<()> {
                                 payload.message.unwrap_or_default()
                             );
                         }
-                    } // Unhandled
+                    }
                     Response::RunInTerminal(_) => (),
                 },
             }
