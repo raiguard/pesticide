@@ -144,8 +144,6 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                // TODO: Response state - right now it will fail to deserialize if it did not succeed
-                // See https://github.com/serde-rs/serde/pull/2056#issuecomment-1109389651
                 AdapterMessage::Response(res) => match res {
                     Response::ConfigurationDone(_) => (),
                     Response::Initialize(payload) => {
