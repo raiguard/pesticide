@@ -2,6 +2,7 @@ use crate::adapter::Adapter;
 use crate::dap_types::*;
 use crate::types::*;
 use anyhow::Result;
+use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -46,13 +47,27 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                         if let Some(body) = event.body {
                             println!("STOPPED on thread {}: {:?}", body.thread_id, body.reason);
                         }
+
+                        // Request threads
+                        let req = AdapterMessage::Request(Request::Threads(RequestPayload {
+                            seq: adapter.next_seq(),
+                            args: None,
+                        }));
+                        adapter.tx.send(req).unwrap();
                     }
                     Event::Thread(event) => {
                         if let Some(body) = event.body {
                             info!("New thread started: {}", body.thread_id);
                             match body.reason {
                                 ThreadReason::Started => {
-                                    adapter.threads.insert(body.thread_id, Thread {});
+                                    adapter.threads.insert(
+                                        body.thread_id,
+                                        Thread {
+                                            id: body.thread_id,
+                                            // This will be replaced with the actual names in the Threads request
+                                            name: format!("{}", body.thread_id),
+                                        },
+                                    );
                                 }
                                 ThreadReason::Exited => {
                                     if adapter.threads.remove(&body.thread_id).is_none() {
@@ -132,6 +147,16 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                     }
                     Response::RunInTerminal(_) => (),
                     Response::StepIn(_) => (),
+                    Response::Threads(res) => {
+                        if let Some(body) = res.body {
+                            // Update the stored threads
+                            let threads = body.threads;
+                            adapter.threads = threads
+                                .into_iter()
+                                .map(|thread| (thread.id, thread))
+                                .collect();
+                        }
+                    }
                 },
             }
         }

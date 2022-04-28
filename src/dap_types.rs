@@ -281,6 +281,7 @@ pub enum Request {
     RunInTerminal(RequestPayload<RunInTerminalRequest>),
     SetBreakpoints(RequestPayload<SetBreakpointsRequest>),
     StepIn(RequestPayload<StepInRequest>),
+    Threads(RequestPayload<Empty>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -506,6 +507,7 @@ pub enum Response {
     Launch(ResponsePayload<Empty>),
     RunInTerminal(ResponsePayload<RunInTerminalResponse>),
     StepIn(ResponsePayload<Empty>),
+    Threads(ResponsePayload<ThreadsResponse>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -550,6 +552,13 @@ pub struct RunInTerminalResponse {
     /// equal to 2147483647 (2^31-1).
     #[serde(rename = "shellProcessID")]
     pub shell_process_id: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadsResponse {
+    /// All threads.
+    pub threads: Vec<Thread>,
 }
 
 // TYPES
@@ -899,6 +908,16 @@ pub enum SteppingGranularity {
 // This is ugly and sad
 fn stepping_granularity_default() -> SteppingGranularity {
     SteppingGranularity::Statement
+}
+
+/// A thread.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Thread {
+    /// Unique identifier for the thread.
+    pub id: u32,
+
+    /// A name of the thread.
+    pub name: String,
 }
 
 // UTILITIES
