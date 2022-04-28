@@ -1,8 +1,6 @@
 use crate::adapter::Adapter;
 use crate::dap_types::*;
-use crate::types::*;
 use anyhow::Result;
-use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -146,6 +144,11 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                         }
                     }
                     Response::RunInTerminal(_) => (),
+                    Response::StackTrace(res) => {
+                        if let Some(body) = res.body {
+                            // TODO:
+                        }
+                    }
                     Response::StepIn(_) => (),
                     Response::Threads(res) => {
                         if let Some(body) = res.body {

@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::dap_types::*;
-use crate::types::*;
 use anyhow::{bail, Context, Result};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -17,6 +16,7 @@ pub struct Adapter {
 
     pub capabilities: Option<Capabilities>,
     pub threads: HashMap<u32, Thread>,
+    pub stack_frames: HashMap<u32, Vec<StackFrame>>,
 }
 
 impl Adapter {
@@ -65,6 +65,7 @@ impl Adapter {
             capabilities: None,
 
             threads: HashMap::new(),
+            stack_frames: HashMap::new(),
         })
     }
 

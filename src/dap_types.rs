@@ -280,6 +280,7 @@ pub enum Request {
     Launch(RequestPayload<Value>),
     RunInTerminal(RequestPayload<RunInTerminalRequest>),
     SetBreakpoints(RequestPayload<SetBreakpointsRequest>),
+    StackTrace(RequestPayload<StackTraceRequest>),
     StepIn(RequestPayload<StepInRequest>),
     Threads(RequestPayload<Empty>),
 }
@@ -453,6 +454,38 @@ pub struct SetBreakpointsRequest {
     source_modified: bool,
 }
 
+/// The request returns a stacktrace from the current execution state of a given
+/// thread.
+///
+/// A client can request all stack frames by omitting the startFrame and levels
+/// arguments. For performance conscious clients and if the debug adapter’s
+/// ‘supportsDelayedStackTraceLoading’ capability is true, stack frames can be
+/// retrieved in a piecemeal way with the startFrame and levels arguments. The
+/// response of the stackTrace request may contain a totalFrames property that
+/// hints at the total number of frames in the stack. If a client needs this
+/// total number upfront, it can issue a request for a single (first) frame and
+/// depending on the value of totalFrames decide how to proceed. In any case a
+/// client should be prepared to receive less frames than requested, which is an
+///  indication that the end of the stack has been reached.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackTraceRequest {
+    /// Retrieve the stacktrace for this thread.
+    thread_id: u32,
+
+    /// The index of the first frame to return, if omitted frames start at 0.
+    start_frame: Option<u32>,
+
+    /// The maximum number of frames to return. If levels is not specified or 0,
+    /// all frames are returned.
+    levels: Option<u32>,
+
+    /// Specifies details on how to format the stack frames.
+    /// The attribute is only honored by a debug adapter if the capability
+    /// 'supportsValueFormattingOptions' is true.
+    format: Option<StackFrameFormat>,
+}
+
 /// The request resumes the given thread to step into a function/method and
 /// allows all other threads to run freely by resuming them.
 ///
@@ -506,6 +539,7 @@ pub enum Response {
     Initialize(ResponsePayload<Capabilities>),
     Launch(ResponsePayload<Empty>),
     RunInTerminal(ResponsePayload<RunInTerminalResponse>),
+    StackTrace(ResponsePayload<StackTraceResponse>),
     StepIn(ResponsePayload<Empty>),
     Threads(ResponsePayload<ThreadsResponse>),
 }
@@ -552,6 +586,22 @@ pub struct RunInTerminalResponse {
     /// equal to 2147483647 (2^31-1).
     #[serde(rename = "shellProcessID")]
     pub shell_process_id: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StackTraceResponse {
+    /// The frames of the stackframe. If the array has length zero, there are no
+    /// stackframes available.
+    /// This means that there is no location information available.
+    pub stack_frames: Vec<StackFrame>,
+
+    /// The total number of frames available in the stack. If omitted or if
+    /// totalFrames is larger than the available frames, a client is expected to
+    /// request frames until a request returns less frames than requested (which
+    /// indicates the end of the stack). Returning monotonically increasing
+    /// totalFrames values for subsequent requests can be used to enforce paging
+    /// in the client.
+    pub total_frames: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -807,6 +857,13 @@ pub struct ExceptionBreakpointsFilter {
     condition_description: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ModuleId {
+    Number(u32),
+    String(String),
+}
+
 /// A Source is a descriptor for source code.
 ///
 /// It is returned from the debug adapter as part of a StackFrame and it is
@@ -885,6 +942,105 @@ pub struct SourceBreakpoint {
     /// The attribute is only honored by a debug adapter if the capability
     /// 'supportsLogPoints' is true.
     pub log_message: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StackFrame {
+    /// An identifier for the stack frame. It must be unique across all threads.
+    /// This id can be used to retrieve the scopes of the frame with the
+    /// 'scopesRequest' or to restart the execution of a stackframe.
+    id: u32,
+
+    /// The name of the stack frame, typically a method name.
+    name: String,
+
+    /// The optional source of the frame.
+    source: Option<Source>,
+
+    /// The line within the file of the frame. If source is null or doesn't
+    /// exist, line is 0 and must be ignored.
+    line: u32,
+
+    /// The column within the line. If source is null or doesn't exist, column is
+    /// 0 and must be ignored.
+    column: u32,
+
+    /// An optional end line of the range covered by the stack frame.
+    end_line: Option<u32>,
+
+    /// An optional end column of the range covered by the stack frame.
+    end_column: Option<u32>,
+
+    /// Indicates whether this frame can be restarted with the 'restart' request.
+    /// Clients should only use this if the debug adapter supports the 'restart'
+    /// request (capability 'supportsRestartRequest' is true).
+    can_restart: Option<bool>,
+
+    /// Optional memory reference for the current instruction pointer in this
+    /// frame.
+    instruction_pointer_reference: Option<String>,
+
+    /// The module associated with this frame, if any.
+    module_id: Option<ModuleId>,
+
+    /// An optional hint for how to present this frame in the UI.
+    /// A value of 'label' can be used to indicate that the frame is an artificial
+    /// frame that is used as a visual label or separator. A value of 'subtle' can
+    /// be used to change the appearance of a frame in a 'subtle' way.
+    /// Values: 'normal', 'label', 'subtle', etc.
+    presentation_hint: StackFramePresentationHint,
+}
+
+/// Provides formatting information for a stack frame.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StackFrameFormat {
+    /// Display the value in hex.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    hex: bool,
+
+    /// Displays parameters for the stack frame.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    parameters: bool,
+
+    /// Displays the types of parameters for the stack frame.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    parameter_types: bool,
+
+    /// Displays the names of parameters for the stack frame.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    parameter_names: bool,
+
+    /// Displays the values of parameters for the stack frame.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    parameter_values: bool,
+
+    /// Displays the line number of the stack frame.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    line: bool,
+
+    /// Displays the module of the stack frame.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    module: bool,
+
+    /// Includes all stack frames, including those the debug adapter might
+    /// otherwise hide.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    include_all: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum StackFramePresentationHint {
+    Normal,
+    Label,
+    Subtle,
 }
 
 /// The granularity of one 'step' in the stepping requests 'next', 'stepIn',
