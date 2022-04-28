@@ -190,7 +190,12 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
 
                     adapter.tx.send(req).unwrap();
                 }
-                "exit" => {
+                "threads" => {
+                    for thread in adapter.threads.values() {
+                        println!("{}", thread.name);
+                    }
+                }
+                "quit" | "q" => {
                     handle_exited(&mut adapter);
                     return;
                 }
