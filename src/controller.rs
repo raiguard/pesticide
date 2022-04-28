@@ -183,6 +183,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                 client_id: Some("pesticide".to_string()),
                 client_name: Some("Pesticide".to_string()),
                 adapter_id: adapter.config.adapter_id.clone(),
+                locale: Some("en-US".to_string()),
                 lines_start_at_1: true,
                 columns_start_at_1: true,
                 path_format: Some(InitializeRequestPathFormat::Path),
