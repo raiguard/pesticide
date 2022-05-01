@@ -25,6 +25,7 @@ pub struct Empty {}
 #[serde(tag = "event")]
 #[serde(rename_all = "lowercase")]
 pub enum Event {
+    Continued(EventPayload<ContinuedEvent>),
     Exited(EventPayload<ExitedEvent>),
     Initialized(EventPayload<Empty>),
     Output(EventPayload<OutputEvent>),
@@ -41,6 +42,26 @@ pub struct EventPayload<T> {
 
     /// Event-specific information.
     pub body: Option<T>,
+}
+
+/// The event indicates that the execution of the debuggee has continued.
+///
+/// Please note: a debug adapter is not expected to send this event in response
+/// to a request that implies that execution continues, e.g. ‘launch’ or
+/// ‘continue’.
+///
+/// It is only necessary to send a ‘continued’ event if there was no previous
+/// request that implied this.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinuedEvent {
+    /// The thread which was continued.
+    thread_id: u32,
+
+    /// If 'allThreadsContinued' is true, a debug adapter can announce that all
+    /// threads have continued.
+    #[serde(default)]
+    all_threads_continued: bool,
 }
 
 // Exited
@@ -1049,6 +1070,7 @@ pub enum StackFramePresentationHint {
 /// The granularity of one 'step' in the stepping requests 'next', 'stepIn',
 /// 'stepOut', and 'stepBack'.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SteppingGranularity {
     /// The step should allow the program to run until the current statement
     /// has finished executing. The meaning of a statement is determined by
@@ -1071,6 +1093,7 @@ fn stepping_granularity_default() -> SteppingGranularity {
 
 /// A thread.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Thread {
     /// Unique identifier for the thread.
     pub id: u32,

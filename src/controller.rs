@@ -35,6 +35,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
             let mut adapter = cli_adapter.lock().unwrap();
 
             let cmd = cmd.trim();
+            trace!("COMMAND: [{}]", cmd);
             match cmd {
                 "in" | "stepin" => {
                     let req = AdapterMessage::Request(Request::StepIn(RequestPayload {
@@ -106,6 +107,11 @@ fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
 
 fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
     match event {
+        Event::Continued(payload) => {
+            adapter.update_seq(payload.seq);
+
+            println!("Continuing?");
+        }
         Event::Exited(_) => handle_exited(adapter),
         Event::Output(payload) => {
             adapter.update_seq(payload.seq);
