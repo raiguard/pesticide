@@ -3,58 +3,93 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Base construct for sending messages to/from the debug adapter.
+/// Base construct for sending messages to or from the debug adapter.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type")]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum AdapterMessage {
-    Event(Event),
-    Request(Request),
-    Response(Response),
+    Event(EventPayload),
+    Request(RequestPayload),
+    Response(ResponsePayload),
 }
-
-/// Some events have empty bodies.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Empty {}
 
 // EVENTS
 
-/// A debug adapter initiated event.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "event")]
-#[serde(rename_all = "lowercase")]
-pub enum Event {
-    Continued(EventPayload<ContinuedEvent>),
-    Exited(EventPayload<ExitedEvent>),
-    Initialized(EventPayload<Empty>),
-    Output(EventPayload<OutputEvent>),
-    Process(EventPayload<ProcessEvent>),
-    Stopped(EventPayload<StoppedEvent>),
-    Thread(EventPayload<ThreadEvent>),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct EventPayload<T> {
+#[serde(rename_all = "camelCase")]
+pub struct EventPayload {
     /// Sequence number (also known as message ID). For protocol messages of
     /// of type 'Request', this ID can be used to cancel the request.
     pub seq: u32,
 
     /// Event-specific information.
-    pub body: Option<T>,
+    #[serde(flatten)]
+    pub event: Event,
 }
 
-/// The event indicates that the execution of the debuggee has continued.
-///
-/// Please note: a debug adapter is not expected to send this event in response
-/// to a request that implies that execution continues, e.g. ‘launch’ or
-/// ‘continue’.
-///
-/// It is only necessary to send a ‘continued’ event if there was no previous
-/// request that implied this.
+/// A debug adapter initiated event.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "event", content = "body")]
+#[serde(rename_all = "camelCase")]
+pub enum Event {
+    /// The event indicates that the execution of the debuggee has continued.
+    ///
+    /// Please note: a debug adapter is not expected to send this event in
+    /// response to a request that implies that execution continues, e.g.
+    /// ‘launch’ or ‘continue’.
+    ///
+    /// It is only necessary to send a ‘continued’ event if there was no
+    /// previous request that implied this.
+    Continued(ContinuedEventBody),
+
+    /// The event indicates that the debuggee has exited and returns its exit
+    /// code.
+    Exited(ExitedEventBody),
+
+    /// This event indicates that the debug adapter is ready to accept
+    /// configuration requests (e.g. SetBreakpointsRequest,
+    /// SetExceptionBreakpointsRequest).
+    ///
+    /// A debug adapter is expected to send this event when it is ready to
+    /// accept configuration requests (but not before the ‘initialize’ request
+    /// has finished).
+    ///
+    /// The sequence of events/requests is as follows:
+    ///
+    /// Adapters sends ‘initialized’ event (after the ‘initialize’ request has
+    /// returned)
+    /// - frontend sends zero or more ‘setBreakpoints’ requests
+    /// - frontend sends one ‘setFunctionBreakpoints’ request (if capability
+    /// ‘supportsFunctionBreakpoints’ is true)
+    /// - frontend sends a ‘setExceptionBreakpoints’ request if one or more
+    /// ‘exceptionBreakpointFilters’ have been defined (or if
+    /// ‘supportsConfigurationDoneRequest’ is not defined or false)
+    /// - frontend sends other future configuration requests
+    /// - frontend sends one ‘configurationDone’ request to indicate the end of
+    /// the configuration.
+    Initialized,
+
+    /// The event indicates that the target has produced some output.
+    Output(OutputEventBody),
+
+    /// The event indicates that the debugger has begun debugging a new process.
+    /// Either one that it has launched, or one that it has attached to.
+    Process(ProcessEventBody),
+
+    /// The event indicates that the execution of the debuggee has stopped due
+    /// to some condition.
+    ///
+    /// This can be caused by a break point previously set, a stepping request
+    /// has completed, by executing a debugger statement etc.
+    Stopped(StoppedEventBody),
+
+    /// The event indicates that a thread has started or exited.
+    Thread(ThreadEventBody),
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContinuedEvent {
+pub struct ContinuedEventBody {
     /// The thread which was continued.
     thread_id: u32,
 
@@ -64,22 +99,16 @@ pub struct ContinuedEvent {
     all_threads_continued: bool,
 }
 
-// Exited
-
-/// The event indicates that the debuggee has exited and returns its exit code.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExitedEvent {
+pub struct ExitedEventBody {
     /// The exit code returned from the debugee.
     pub exit_code: u32,
 }
 
-// Output
-
-/// The event indicates that the target has produced some output.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OutputEvent {
+pub struct OutputEventBody {
     /// The output category. If not specified or if the category is not
     /// understood by the client, 'console' is assumed.
     pub category: Option<OutputEventCategory>,
@@ -162,13 +191,9 @@ pub enum OutputEventGroup {
     End,
 }
 
-// Process
-
-/// The event indicates that the debugger has begun debugging a new process.
-/// Either one that it has launched, or one that it has attached to.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcessEvent {
+pub struct ProcessEventBody {
     /// The logical name of the process. This is usually the full path to
     /// process's executable file. _example: /home/example/myproj/program.js.
     pub name: String,
@@ -204,16 +229,9 @@ pub enum ProcessStartMethod {
     Launch,
 }
 
-// Stopped
-
-/// The event indicates that the execution of the debuggee has stopped due to
-/// some condition.
-///
-/// This can be caused by a break point previously set, a stepping request has
-/// completed, by executing a debugger statement etc.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StoppedEvent {
+pub struct StoppedEventBody {
     /// The reason for the event.
     /// For backward compatibility this string is shown in the UI if the
     /// 'description' attribute is missing (but it must not be translated).
@@ -264,17 +282,17 @@ pub enum StoppedReason {
     Pause,
     Entry,
     Goto,
+    #[serde(rename = "function breakpoint")]
     FunctionBreakpoint,
+    #[serde(rename = "data breakpoint")]
     DataBreakpoint,
+    #[serde(rename = "instruction breakpoint")]
     InstructionBreakpoint,
 }
 
-// Thread
-
-/// The event indicates that a thread has started or exited.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadEvent {
+pub struct ThreadEventBody {
     /// The reason for the event.
     pub reason: ThreadReason,
 
@@ -291,49 +309,120 @@ pub enum ThreadReason {
 
 // REQUESTS
 
-/// A client or debug adapter initiated request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "command")]
-#[serde(rename_all = "camelCase")]
-pub enum Request {
-    ConfigurationDone(RequestPayload<Empty>),
-    Initialize(RequestPayload<InitializeRequest>),
-    Launch(RequestPayload<Value>),
-    RunInTerminal(RequestPayload<RunInTerminalRequest>),
-    SetBreakpoints(RequestPayload<SetBreakpointsRequest>),
-    StackTrace(RequestPayload<StackTraceRequest>),
-    StepIn(RequestPayload<StepInRequest>),
-    Threads(RequestPayload<Empty>),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RequestPayload<T> {
+pub struct RequestPayload {
     /// Sequence number (also known as message ID). For protocol messages of
     /// of type 'Request', this ID can be used to cancel the request.
     pub seq: u32,
 
     /// Object containing arguments for the command.
-    #[serde(rename = "arguments")]
-    pub args: Option<T>,
+    #[serde(flatten)]
+    pub request: Request,
 }
 
-// Initialize
+/// A client or debug adapter initiated request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "command", content = "arguments")]
+#[serde(rename_all = "camelCase")]
+pub enum Request {
+    /// This optional request indicates that the client has finished
+    /// initialization of the debug adapter.
+    ///
+    /// So it is the last request in the sequence of configuration requests
+    /// (which was started by the ‘initialized’ event).
+    ///
+    /// Clients should only call this request if the capability
+    /// ‘supportsConfigurationDoneRequest’ is true.
+    ConfigurationDone,
 
-/// The 'initialize' request is sent as the first request from the client to
-/// the debug adapter in order to configure it with client capabilities and to
-/// retrieve capabilities from the debug adapter.
-///
-/// Until the debug adapter has responded to with an 'initialize' response, the
-/// client must not send any additional requests or events to the debug
-/// adapter.
-///
-/// In addition the debug adapter is not allowed to send any requests or events
-/// to the client until it has responded with an 'initialize' response.
-///
-/// The 'initialize' request may only be sent once.
+    /// The 'initialize' request is sent as the first request from the client to
+    /// the debug adapter in order to configure it with client capabilities and
+    /// to retrieve capabilities from the debug adapter.
+    ///
+    /// Until the debug adapter has responded to with an 'initialize' response,
+    /// the /// client must not send any additional requests or events to the
+    /// debug adapter.
+    ///
+    /// In addition the debug adapter is not allowed to send any requests or
+    /// events to the client until it has responded with an 'initialize'
+    /// response.
+    ///
+    /// The 'initialize' request may only be sent once.
+    Initialize(InitializeRequestArgs),
+
+    /// This launch request is sent from the client to the debug adapter to
+    /// start the debuggee with or without debugging (if ‘noDebug’ is true).
+    ///
+    /// Since launching is debugger/runtime specific, the arguments for this
+    /// request are not part of this specification.
+    Launch(LaunchRequestArgs),
+
+    /// This optional request is sent from the debug adapter to the client to
+    /// run a command in a terminal.
+    ///
+    /// This is typically used to launch the debuggee in a terminal provided by
+    /// the client.
+    ///
+    /// This request should only be called if the client has passed the value
+    /// true for the ‘supportsRunInTerminalRequest’ capability of the
+    /// ‘initialize’ request.
+    RunInTerminal(RunInTerminalRequestArgs),
+
+    /// Sets multiple breakpoints for a single source and clears all previous
+    /// breakpoints in that source.
+    ///
+    /// To clear all breakpoint for a source, specify an empty array.
+    ///
+    /// When a breakpoint is hit, a ‘stopped’ event (with reason ‘breakpoint’)
+    /// is generated.
+    SetBreakpoints(SetBreakpointsRequestArgs),
+
+    /// The request returns a stacktrace from the current execution state of a
+    /// given thread.
+    ///
+    /// A client can request all stack frames by omitting the startFrame and
+    /// levels arguments. For performance conscious clients and if the debug
+    /// adapter’s ‘supportsDelayedStackTraceLoading’ capability is true, stack
+    /// frames can be retrieved in a piecemeal way with the startFrame and
+    /// levels arguments. The response of the stackTrace request may contain a
+    /// totalFrames property that hints at the total number of frames in the
+    /// stack. If a client needs this total number upfront, it can issue a
+    /// request for a single (first) frame and depending on the value of
+    /// totalFrames decide how to proceed. In any case a client should be
+    /// prepared to receive less frames than requested, which is an indication
+    /// that the end of the stack has been reached.
+    StackTrace(StackTraceRequestArgs),
+
+    /// The request resumes the given thread to step into a function/method and
+    /// allows all other threads to run freely by resuming them.
+    ///
+    /// If the debug adapter supports single thread execution (see capability
+    /// 'supportsSingleThreadExecutionRequests') setting the 'singleThread'
+    /// argument to true prevents other suspended threads from resuming.
+    ///
+    /// If the request cannot step into a target, 'stepIn' behaves like the
+    /// 'next' request.
+    ///
+    /// The debug adapter first sends the response and then a 'stopped' event
+    /// (with reason 'step') after the step has completed.
+    ///
+    /// If there are multiple function/method calls (or other targets) on the
+    /// source line,
+    ///
+    /// the optional argument 'targetId' can be used to control into which
+    /// target the 'stepIn' should occur.
+    ///
+    /// The list of possible targets for a given source line can be retrieved
+    /// via the 'stepInTargets' request.
+    StepIn(StepInRequestArgs),
+
+    /// The request retrieves a list of all threads.
+    Threads,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitializeRequest {
+pub struct InitializeRequestArgs {
     /// The ID of the (frontend) client using this adapter.
     #[serde(rename = "clientID")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -408,20 +497,28 @@ pub enum InitializeRequestPathFormat {
     Uri,
 }
 
-// RunInTerminal
-
-/// This optional request is sent from the debug adapter to the client to run
-/// a command in a terminal.
-///
-/// This is typically used to launch the debuggee in a terminal provided by the
-/// client.
-///
-/// This request should only be called if the client has passed the value true
-/// for the ‘supportsRunInTerminalRequest’ capability of the ‘initialize’
-/// request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RunInTerminalRequest {
+pub struct LaunchRequestArgs {
+    /// If noDebug is true, the launch request should launch the program without
+    /// enabling debugging.
+    #[serde(default)]
+    pub no_debug: bool,
+
+    /// Optional data from the previous, restarted session.
+    /// The data is sent as the 'restart' attribute of the 'terminated' event.
+    /// The client should leave the data intact.
+    #[serde(rename = "__restart")]
+    pub restart: Option<Value>,
+
+    /// Implementation-specific arguments.
+    #[serde(flatten)]
+    pub args: Option<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunInTerminalRequestArgs {
     /// What kind of terminal to launch.
     pub kind: RunInTerminalKind,
 
@@ -447,18 +544,9 @@ pub enum RunInTerminalKind {
     Integrated,
 }
 
-// SetBreakpoints
-
-/// Sets multiple breakpoints for a single source and clears all previous
-/// breakpoints in that source.
-///
-/// To clear all breakpoint for a source, specify an empty array.
-///
-/// When a breakpoint is hit, a ‘stopped’ event (with reason ‘breakpoint’) is
-/// generated.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SetBreakpointsRequest {
+pub struct SetBreakpointsRequestArgs {
     // The source location of the breakpoints; either 'source.path' or
     // 'source.reference' must be specified.
     pub source: Source,
@@ -475,22 +563,9 @@ pub struct SetBreakpointsRequest {
     pub source_modified: bool,
 }
 
-/// The request returns a stacktrace from the current execution state of a given
-/// thread.
-///
-/// A client can request all stack frames by omitting the startFrame and levels
-/// arguments. For performance conscious clients and if the debug adapter’s
-/// ‘supportsDelayedStackTraceLoading’ capability is true, stack frames can be
-/// retrieved in a piecemeal way with the startFrame and levels arguments. The
-/// response of the stackTrace request may contain a totalFrames property that
-/// hints at the total number of frames in the stack. If a client needs this
-/// total number upfront, it can issue a request for a single (first) frame and
-/// depending on the value of totalFrames decide how to proceed. In any case a
-/// client should be prepared to receive less frames than requested, which is an
-///  indication that the end of the stack has been reached.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StackTraceRequest {
+pub struct StackTraceRequestArgs {
     /// Retrieve the stacktrace for this thread.
     pub thread_id: u32,
 
@@ -507,30 +582,9 @@ pub struct StackTraceRequest {
     pub format: Option<StackFrameFormat>,
 }
 
-/// The request resumes the given thread to step into a function/method and
-/// allows all other threads to run freely by resuming them.
-///
-/// If the debug adapter supports single thread execution (see capability
-/// 'supportsSingleThreadExecutionRequests') setting the 'singleThread'
-/// argument to true prevents other suspended threads from resuming.
-///
-/// If the request cannot step into a target, 'stepIn' behaves like the 'next'
-/// request.
-///
-/// The debug adapter first sends the response and then a 'stopped' event (with
-///  reason 'step') after the step has completed.
-///
-/// If there are multiple function/method calls (or other targets) on the
-/// source line,
-///
-/// the optional argument 'targetId' can be used to control into which target
-/// the 'stepIn' should occur.
-///
-/// The list of possible targets for a given source line can be retrieved via
-/// the 'stepInTargets' request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StepInRequest {
+pub struct StepInRequestArgs {
     /// Specifies the thread for which to resume execution for one step-into
     /// (of the given granularity).
     pub thread_id: u32,
@@ -551,22 +605,8 @@ pub struct StepInRequest {
 
 // RESPONSES
 
-/// Response for a request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "command")]
-#[serde(rename_all = "camelCase")]
-pub enum Response {
-    ConfigurationDone(ResponsePayload<Empty>),
-    Initialize(ResponsePayload<Capabilities>),
-    Launch(ResponsePayload<Empty>),
-    RunInTerminal(ResponsePayload<RunInTerminalResponse>),
-    StackTrace(ResponsePayload<StackTraceResponse>),
-    StepIn(ResponsePayload<Empty>),
-    Threads(ResponsePayload<ThreadsResponse>),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResponsePayload<T> {
+pub struct ResponsePayload {
     /// Sequence number (also known as message ID). For protocol messages of
     /// of type 'Request', this ID can be used to cancel the request.
     pub seq: u32,
@@ -591,13 +631,26 @@ pub struct ResponsePayload<T> {
 
     /// Contains request result if success is true and optional error details
     /// if success is false.
-    pub body: Option<T>,
+    #[serde(flatten)]
+    pub response: Response,
 }
 
-// RunInTerminal
+/// Response for a request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "command", content = "body")]
+#[serde(rename_all = "camelCase")]
+pub enum Response {
+    ConfigurationDone,
+    Initialize(Capabilities),
+    Launch,
+    RunInTerminal(RunInTerminalResponseBody),
+    StackTrace(StackTraceResponseBody),
+    StepIn,
+    Threads(ThreadsResponseBody),
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RunInTerminalResponse {
+pub struct RunInTerminalResponseBody {
     /// The process ID. The value should be less than or equal to 2147483647
     /// (2^31-1).
     #[serde(rename = "processID")]
@@ -611,7 +664,7 @@ pub struct RunInTerminalResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StackTraceResponse {
+pub struct StackTraceResponseBody {
     /// The frames of the stackframe. If the array has length zero, there are no
     /// stackframes available.
     /// This means that there is no location information available.
@@ -628,7 +681,7 @@ pub struct StackTraceResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadsResponse {
+pub struct ThreadsResponseBody {
     /// All threads.
     pub threads: Vec<Thread>,
 }
@@ -1135,8 +1188,9 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&msg).unwrap());
         assert_eq!(
             msg,
-            AdapterMessage::Event(Event::Output(EventPayload {
-                body: Some(OutputEvent {
+            AdapterMessage::Event(EventPayload {
+                seq: 1,
+                event: Event::Output(OutputEventBody {
                     category: Some(OutputEventCategory::Console),
                     output: "Hello world!".to_string(),
                     group: None,
@@ -1146,8 +1200,7 @@ mod tests {
                     column: None,
                     data: None
                 }),
-                seq: 1
-            })),
+            })
         );
     }
 
@@ -1173,9 +1226,9 @@ mod tests {
         println!("{}", serde_json::to_string_pretty(&msg).unwrap());
         assert_eq!(
             msg,
-            AdapterMessage::Request(Request::Initialize(RequestPayload {
+            AdapterMessage::Request(RequestPayload {
                 seq: 0,
-                args: Some(InitializeRequest {
+                request: Request::Initialize(InitializeRequestArgs {
                     client_id: Some("pesticide".to_string()),
                     client_name: Some("Pesticide".to_string()),
                     adapter_id: Some("pydbg".to_string()),
@@ -1191,7 +1244,7 @@ mod tests {
                     supports_invalidated_event: false,
                     supports_memory_event: false,
                 }),
-            }))
+            })
         );
     }
 
@@ -1254,12 +1307,12 @@ mod tests {
 
         assert_eq!(
             msg,
-            AdapterMessage::Response(Response::Initialize(ResponsePayload {
+            AdapterMessage::Response(ResponsePayload {
                 seq: 3,
                 request_seq: 0,
                 success: true,
                 message: None,
-                body: Some(Capabilities {
+                response: Response::Initialize(Capabilities {
                     supports_completions_request: true,
                     supports_conditional_breakpoints: true,
                     supports_configuration_done_request: true,
@@ -1332,7 +1385,7 @@ mod tests {
                         },
                     ]),
                 }),
-            }))
+            })
         );
     }
 }
