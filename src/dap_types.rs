@@ -390,6 +390,9 @@ pub enum Request {
     /// ‘initialize’ request.
     RunInTerminal(RunInTerminalArgs),
 
+    /// The request returns the variable scopes for a given stackframe ID.
+    Scopes(ScopesArgs),
+
     /// Sets multiple breakpoints for a single source and clears all previous
     /// breakpoints in that source.
     ///
@@ -587,6 +590,13 @@ pub struct SetBreakpointsArgs {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ScopesArgs {
+    /// Retrieve the scopes for this stackframe.
+    pub frame_id: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StackTraceArgs {
     /// Retrieve the stacktrace for this thread.
     pub thread_id: u32,
@@ -666,6 +676,7 @@ pub enum Response {
     Initialize(Capabilities),
     Launch,
     RunInTerminal(RunInTerminalBody),
+    Scopes(ScopesResponse),
     StackTrace(StackTraceBody),
     StepIn,
     Threads(ThreadsBody),
@@ -682,6 +693,14 @@ pub struct RunInTerminalBody {
     /// equal to 2147483647 (2^31-1).
     #[serde(rename = "shellProcessID")]
     pub shell_process_id: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopesResponse {
+    /// The scopes of the stackframe. If the array has length zero, there are
+    /// no scopes available.
+    scopes: Vec<Scope>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1015,6 +1034,64 @@ pub struct ExceptionBreakpointsFilter {
     /// string is shown as the placeholder text for a text box and must be
     /// translated.
     pub condition_description: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Scope {
+    /// Name of the scope such as 'Arguments', 'Locals', or 'Registers'. This
+    /// string is shown in the UI as is and can be translated.
+    name: String,
+
+    /// An optional hint for how to present this scope in the UI. If this
+    /// attribute is missing, the scope is shown with a generic UI.
+    presentation_hint: Option<ScopePresentationHint>,
+
+    /// The variables of this scope can be retrieved by passing the value of
+    /// variablesReference to the VariablesRequest.
+    variables_reference: u32,
+
+    /// The number of named variables in this scope.
+    /// The client can use this optional information to present the variables in
+    /// a paged UI and fetch them in chunks.
+    named_variables: Option<u32>,
+
+    /// The number of indexed variables in this scope.
+    /// The client can use this optional information to present the variables in
+    /// a paged UI and fetch them in chunks.
+    indexed_variables: Option<u32>,
+
+    /// If true, the number of variables in this scope is large or expensive to
+    /// retrieve.
+    #[serde(default)]
+    expensive: bool,
+
+    /// Optional source for this scope.
+    source: Option<Source>,
+
+    /// Optional start line of the range covered by this scope.
+    line: Option<u32>,
+
+    /// Optional start column of the range covered by this scope.
+    column: Option<u32>,
+
+    /// Optional end line of the range covered by this scope.
+    end_line: Option<u32>,
+
+    /// Optional end column of the range covered by this scope.
+    end_column: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScopePresentationHint {
+    /// Scope contains method arguments.
+    Arguments,
+    /// Scope contains local variables.
+    Locals,
+    /// Scope contains registers. Only a single 'registers' scope should be
+    /// returned from a 'scopes' request.
+    Registers,
 }
 
 /// A Source is a descriptor for source code.

@@ -190,10 +190,13 @@ fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<()> 
     }
 }
 
-fn handle_response(adapter: &mut Adapter, res: ResponsePayload) -> Result<()> {
-    adapter.update_seq(res.seq);
+fn handle_response(adapter: &mut Adapter, payload: ResponsePayload) -> Result<()> {
+    adapter.update_seq(payload.seq);
 
-    match res.response {
+    // Get the request that triggered this response
+    let req = adapter.get_request(payload.request_seq);
+
+    match payload.response {
         Response::ConfigurationDone => (),
         Response::Initialize(capabilities) => {
             // Save capabilities to Adapter
@@ -210,17 +213,28 @@ fn handle_response(adapter: &mut Adapter, res: ResponsePayload) -> Result<()> {
             }))?;
         }
         Response::Launch => {
-            if res.success {
+            if payload.success {
             } else {
                 error!(
                     "Could not launch debug adapter: {}",
-                    res.message.unwrap_or_default()
+                    payload.message.unwrap_or_default()
                 );
             }
         }
         Response::RunInTerminal(_) => (),
-        Response::StackTrace(res) => {
+        Response::Scopes(res) => {
             println!("{:#?}", res);
+        }
+        Response::StackTrace(res) => {
+            if let Some(Request::StackTrace(req)) = req {
+                for stack_frame in &res.stack_frames {
+                    adapter.send_request(Request::Scopes(ScopesArgs {
+                        frame_id: stack_frame.id,
+                    }))?;
+                }
+
+                adapter.stack_frames.insert(req.thread_id, res.stack_frames);
+            }
         }
         Response::StepIn => (),
         Response::Threads(res) => {

@@ -17,6 +17,7 @@ pub struct Adapter {
     pub capabilities: Option<Capabilities>,
     pub threads: HashMap<u32, Thread>,
     pub stack_frames: HashMap<u32, Vec<StackFrame>>,
+    pub scopes: HashMap<u32, Vec<Scope>>,
 
     /// Responses from the debug adapter will use the seq as an identifier
     requests: HashMap<u32, Request>,
@@ -70,6 +71,7 @@ impl Adapter {
             capabilities: None,
             threads: HashMap::new(),
             stack_frames: HashMap::new(),
+            scopes: HashMap::new(),
 
             requests: HashMap::new(),
             stdin,
@@ -120,6 +122,10 @@ impl Adapter {
         self.write(res)?;
 
         Ok(())
+    }
+
+    pub fn get_request(&mut self, seq: u32) -> Option<Request> {
+        self.requests.remove(&seq)
     }
 
     fn write(&mut self, msg: String) -> Result<()> {
