@@ -62,29 +62,29 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         }
     });
 
-    {
-        // This will be dropped at the end of this inner scope, freeing it up
-        let mut adapter = adapter.lock().unwrap();
-        let adapter_id = adapter.config.adapter_id.clone();
+    let mut adapter = adapter.lock().unwrap();
+    let adapter_id = adapter.config.adapter_id.clone();
 
-        // Send initialize request
-        adapter.send_request(Request::Initialize(InitializeArgs {
-            client_id: Some("pesticide".to_string()),
-            client_name: Some("Pesticide".to_string()),
-            adapter_id,
-            locale: Some("en-US".to_string()),
-            lines_start_at_1: true,
-            columns_start_at_1: true,
-            path_format: Some(InitializePathFormat::Path),
-            supports_variable_type: false,
-            supports_variable_paging: false,
-            supports_run_in_terminal_request: true,
-            supports_memory_references: false,
-            supports_progress_reporting: false,
-            supports_invalidated_event: false,
-            supports_memory_event: false,
-        }))?;
-    }
+    // Send initialize request
+    adapter.send_request(Request::Initialize(InitializeArgs {
+        client_id: Some("pesticide".to_string()),
+        client_name: Some("Pesticide".to_string()),
+        adapter_id,
+        locale: Some("en-US".to_string()),
+        lines_start_at_1: true,
+        columns_start_at_1: true,
+        path_format: Some(InitializePathFormat::Path),
+        supports_variable_type: false,
+        supports_variable_paging: false,
+        supports_run_in_terminal_request: true,
+        supports_memory_references: false,
+        supports_progress_reporting: false,
+        supports_invalidated_event: false,
+        supports_memory_event: false,
+    }))?;
+
+    // Let's not block the main thread!
+    drop(adapter);
 
     event_loop.join().unwrap()?;
     cli_loop.join().unwrap();
@@ -109,14 +109,10 @@ fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
         }
         Event::Exited(_) => handle_exited(adapter),
         Event::Module(_) => (), // TODO:
-        Event::Output(event) => {
-            match event.category {
-                Some(OutputCategory::Telemetry) => {
-                    info!("IDGAF about telemetry")
-                } // IDGAF about telemetry
-                _ => info!("[DEBUG ADAPTER] >> {}", event.output),
-            }
-        }
+        Event::Output(event) => match event.category {
+            Some(OutputCategory::Telemetry) => (), // IDGAF about telemetry
+            _ => info!("[DEBUG ADAPTER] >> {}", event.output),
+        },
         Event::Initialized => {
             info!("Debug adapter is initialized");
             // TODO: setBreakpoints, etc...
