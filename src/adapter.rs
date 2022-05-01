@@ -18,6 +18,7 @@ pub struct Adapter {
     pub threads: HashMap<u32, Thread>,
     pub stack_frames: HashMap<u32, Vec<StackFrame>>,
     pub scopes: HashMap<u32, Vec<Scope>>,
+    pub variables: HashMap<u32, Vec<Variable>>,
 
     /// Responses from the debug adapter will use the seq as an identifier
     requests: HashMap<u32, Request>,
@@ -57,10 +58,6 @@ impl Adapter {
         });
 
         let stdin = BufWriter::new(child.stdin.take().context("Failed to open stdin")?);
-        // let (in_tx, in_rx) = crossbeam_channel::bounded(1024);
-        // thread::spawn(move || {
-        //     writer_loop(stdin, &in_rx).expect("Failed to read message from debug adapter");
-        // });
 
         Ok(Self {
             child,
@@ -72,6 +69,7 @@ impl Adapter {
             threads: HashMap::new(),
             stack_frames: HashMap::new(),
             scopes: HashMap::new(),
+            variables: HashMap::new(),
 
             requests: HashMap::new(),
             stdin,
@@ -126,6 +124,10 @@ impl Adapter {
 
     pub fn get_request(&mut self, seq: u32) -> Option<Request> {
         self.requests.remove(&seq)
+    }
+
+    pub fn num_requests(&self) -> usize {
+        self.requests.len()
     }
 
     fn write(&mut self, msg: String) -> Result<()> {

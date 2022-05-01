@@ -443,6 +443,12 @@ pub enum Request {
 
     /// The request retrieves a list of all threads.
     Threads,
+
+    /// Retrieves all child variables for the given variable reference.
+    ///
+    /// An optional filter can be used to limit the fetched children to either
+    /// named or indexed children.
+    Variables(VariablesArgs),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -635,6 +641,37 @@ pub struct StepInArgs {
     pub granularity: SteppingGranularity,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariablesArgs {
+    /// The Variable reference.
+    pub variables_reference: u32,
+
+    /// Optional filter to limit the child variables to either named or indexed.
+    /// If omitted, both types are fetched.
+    pub filter: Option<VariablesFilter>,
+
+    /// The index of the first variable to return, if omitted children start at
+    /// 0.
+    pub start: Option<u32>,
+
+    /// The number of variables to return. If count is missing or 0, all
+    /// variables are returned.
+    pub count: Option<u32>,
+
+    /// Specifies details on how to format the Variable values.
+    /// The attribute is only honored by a debug adapter if the capability
+    /// 'supportsValueFormattingOptions' is true.
+    pub format: Option<ValueFormat>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VariablesFilter {
+    Indexed,
+    Named,
+}
+
 // RESPONSES
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -680,6 +717,7 @@ pub enum Response {
     StackTrace(StackTraceResponse),
     StepIn,
     Threads(ThreadsResponse),
+    Variables(VariablesResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -700,7 +738,7 @@ pub struct RunInTerminalResponse {
 pub struct ScopesResponse {
     /// The scopes of the stackframe. If the array has length zero, there are
     /// no scopes available.
-    scopes: Vec<Scope>,
+    pub scopes: Vec<Scope>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -725,6 +763,82 @@ pub struct StackTraceResponse {
 pub struct ThreadsResponse {
     /// All threads.
     pub threads: Vec<Thread>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariablesResponse {
+    /// All (or a range) of variables for the given variable reference.
+    pub variables: Vec<Variable>,
+}
+
+/// A Variable is a name/value pair.
+///
+/// Optionally a variable can have a ‘type’ that is shown if space permits or
+/// when hovering over the variable’s name.
+///
+/// An optional ‘kind’ is used to render additional properties of the variable,
+/// e.g. different icons can be used to indicate that a variable is public or
+/// private.
+///
+/// If the value is structured (has children), a handle is provided to retrieve
+/// the children with the VariablesRequest.
+///
+/// If the number of named or indexed children is large, the numbers should be
+/// returned via the optional ‘namedVariables’ and ‘indexedVariables’ attributes.
+///
+/// The client can use this optional information to present the children in a
+/// paged UI and fetch them in chunks.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Variable {
+    /// The variable's name.
+    pub name: String,
+
+    /// The variable's value.
+    /// This can be a multi-line text, e.g. for a function the body of a function.
+    /// For structured variables (which do not have a simple value), it is
+    /// recommended to provide a one line representation of the structured object.
+    /// This helps to identify the structured object in the collapsed state when
+    /// its children are not yet visible.
+    /// An empty string can be used if no value should be shown in the UI.
+    pub value: String,
+
+    /// The type of the variable's value. Typically shown in the UI when hovering
+    /// over the value.
+    /// This attribute should only be returned by a debug adapter if the client has
+    /// passed the value true for the 'supportsVariableType' capability of the
+    /// 'initialize' request.
+    #[serde(rename = "type")]
+    pub var_type: Option<String>,
+
+    /// Properties of a variable that can be used to determine how to render the
+    /// variable in the UI.
+    pub presentation_hint: Option<VariablePresentationHint>,
+
+    /// Optional evaluatable name of this variable which can be passed to the
+    /// 'EvaluateRequest' to fetch the variable's value.
+    pub evaluate_name: Option<String>,
+
+    /// If variablesReference is > 0, the variable is structured and its children
+    /// can be retrieved by passing variablesReference to the VariablesRequest.
+    pub variables_reference: u32,
+
+    /// The number of named child variables.
+    /// The client can use this optional information to present the children in a
+    /// paged UI and fetch them in chunks.
+    pub named_variables: Option<u32>,
+
+    /// The number of indexed child variables.
+    /// The client can use this optional information to present the children in a
+    /// paged UI and fetch them in chunks.
+    pub indexed_variables: Option<u32>,
+
+    /// Optional memory reference for the variable if the variable represents
+    /// executable code, such as a function pointer.
+    /// This attribute is only required if the client has passed the value true for
+    /// the 'supportsMemoryReferences' capability of the 'initialize' request.
+    pub memory_reference: Option<String>,
 }
 
 // TYPES
@@ -1041,45 +1155,45 @@ pub struct ExceptionBreakpointsFilter {
 pub struct Scope {
     /// Name of the scope such as 'Arguments', 'Locals', or 'Registers'. This
     /// string is shown in the UI as is and can be translated.
-    name: String,
+    pub name: String,
 
     /// An optional hint for how to present this scope in the UI. If this
     /// attribute is missing, the scope is shown with a generic UI.
-    presentation_hint: Option<ScopePresentationHint>,
+    pub presentation_hint: Option<ScopePresentationHint>,
 
     /// The variables of this scope can be retrieved by passing the value of
     /// variablesReference to the VariablesRequest.
-    variables_reference: u32,
+    pub variables_reference: u32,
 
     /// The number of named variables in this scope.
     /// The client can use this optional information to present the variables in
     /// a paged UI and fetch them in chunks.
-    named_variables: Option<u32>,
+    pub named_variables: Option<u32>,
 
     /// The number of indexed variables in this scope.
     /// The client can use this optional information to present the variables in
     /// a paged UI and fetch them in chunks.
-    indexed_variables: Option<u32>,
+    pub indexed_variables: Option<u32>,
 
     /// If true, the number of variables in this scope is large or expensive to
     /// retrieve.
     #[serde(default)]
-    expensive: bool,
+    pub expensive: bool,
 
     /// Optional source for this scope.
-    source: Option<Source>,
+    pub source: Option<Source>,
 
     /// Optional start line of the range covered by this scope.
-    line: Option<u32>,
+    pub line: Option<u32>,
 
     /// Optional start column of the range covered by this scope.
-    column: Option<u32>,
+    pub column: Option<u32>,
 
     /// Optional end line of the range covered by this scope.
-    end_line: Option<u32>,
+    pub end_line: Option<u32>,
 
     /// Optional end column of the range covered by this scope.
-    end_column: Option<u32>,
+    pub end_column: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1308,6 +1422,105 @@ pub struct Thread {
 
     /// A name of the thread.
     pub name: String,
+}
+
+/// Provides formatting information for a value.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueFormat {
+    /// Display the value in hex.
+    #[serde(default)]
+    pub hex: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VariableAttribute {
+    /// Indicates that the object is static.
+    Static,
+    /// Indicates that the object is a constant.
+    Constant,
+    /// Indicates that the object is read only.
+    ReadOnly,
+    /// Indicates that the object is a raw string.
+    RawString,
+    /// Indicates that the object can have an Object ID created for  it.
+    HasObjectId,
+    /// Indicates that the object has an Object ID associated  with it.
+    CanHaveObjectId,
+    /// Indicates that the evaluation had side effects.
+    HasSideEffects,
+    /// Indicates that the object has its value tracked by a  data breakpoint.
+    HasDataBreakpoint,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VariableKind {
+    /// Indicates that the object is a property.
+    Property,
+    /// Indicates that the object is a method.
+    Method,
+    /// Indicates that the object is a class.
+    Class,
+    /// Indicates that the object is data.
+    Data,
+    /// Indicates that the object is an event.
+    Event,
+    /// Indicates that the object is a base class.
+    BaseClass,
+    /// Indicates that the object is an inner class.
+    InnerClass,
+    /// Indicates that the object is an interface.
+    Interface,
+    /// Indicates that the object is the most derived class.
+    MostDerivedClass,
+    /// Indicates that the object is virtual, that means it is a synthetic
+    /// object introduced by the adapter for rendering purposes, e.g. an index
+    /// range for large arrays.
+    Virtual,
+    /// Deprecated: Indicates that a data breakpoint is registered for the
+    /// object. The 'hasDataBreakpoint' attribute should generally be used
+    /// instead.
+    DataBreakpoint,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariablePresentationHint {
+    /// The kind of variable. Before introducing additional values, try to use
+    /// the listed values.
+    pub kind: Option<VariableKind>,
+
+    /// Set of attributes represented as an array of strings. Before introducing
+    /// additional values, try to use the listed values.
+    pub attributes: Option<Vec<VariableAttribute>>,
+
+    /// Visibility of variable. Before introducing additional values, try to use
+    /// the listed values.
+    pub visibility: Option<VariableVisibility>,
+
+    /// If true, clients can present the variable with a UI that supports a
+    /// specific gesture to trigger its evaluation.
+    /// This mechanism can be used for properties that require executing code
+    /// when retrieving their value and where the code execution can be
+    /// expensive and/or produce side-effects. A typical example are properties
+    /// based on a getter /// function.
+    /// Please note that in addition to the 'lazy' flag, the variable's
+    /// 'variablesReference' must refer to a variable that will provide the
+    /// value through another 'variable' request.
+    #[serde(default)]
+    pub lazy: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VariableVisibility {
+    Public,
+    Private,
+    Protected,
+    Internal,
+    Final,
 }
 
 // UTILITIES

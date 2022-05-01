@@ -223,7 +223,20 @@ fn handle_response(adapter: &mut Adapter, payload: ResponsePayload) -> Result<()
         }
         Response::RunInTerminal(_) => (),
         Response::Scopes(res) => {
-            println!("{:#?}", res);
+            if let Some(Request::Scopes(req)) = req {
+                // TEMPORARY:
+                for scope in &res.scopes {
+                    adapter.send_request(Request::Variables(VariablesArgs {
+                        variables_reference: scope.variables_reference,
+                        filter: None,
+                        start: None,
+                        count: None,
+                        format: None,
+                    }))?;
+                }
+
+                adapter.scopes.insert(req.frame_id, res.scopes);
+            }
         }
         Response::StackTrace(res) => {
             if let Some(Request::StackTrace(req)) = req {
@@ -254,6 +267,17 @@ fn handle_response(adapter: &mut Adapter, payload: ResponsePayload) -> Result<()
                     levels: None,
                     format: None,
                 }))?;
+            }
+        }
+        Response::Variables(res) => {
+            if let Some(Request::Variables(req)) = req {
+                adapter
+                    .variables
+                    .insert(req.variables_reference, res.variables);
+            }
+
+            if adapter.num_requests() == 0 {
+                println!("{:#?}", adapter.variables);
             }
         }
     };
