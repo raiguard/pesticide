@@ -17,6 +17,9 @@ pub struct Adapter {
     pub capabilities: Option<Capabilities>,
     pub threads: HashMap<u32, Thread>,
     pub stack_frames: HashMap<u32, Vec<StackFrame>>,
+
+    /// Responses from the debug adapter will use the seq as an identifier
+    requests: HashMap<u32, Request>,
 }
 
 impl Adapter {
@@ -62,14 +65,15 @@ impl Adapter {
             rx: out_rx,
             tx: in_tx,
             next_seq: 0,
-            capabilities: None,
 
+            capabilities: None,
             threads: HashMap::new(),
             stack_frames: HashMap::new(),
+
+            requests: HashMap::new(),
         })
     }
 
-    // TODO: seq is getting out of sync somehow
     pub fn next_seq(&mut self) -> u32 {
         let seq = self.next_seq;
         self.next_seq += 1;
@@ -80,6 +84,16 @@ impl Adapter {
         if new_seq >= self.next_seq {
             self.next_seq = new_seq + 1
         }
+    }
+
+    pub fn send_request(&mut self, req: Request) {
+        let seq = self.next_seq();
+
+        self.requests.insert(seq, req.clone());
+
+        self.tx.send(AdapterMessage::Request(req)).unwrap();
+
+        todo!()
     }
 }
 
