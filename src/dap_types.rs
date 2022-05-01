@@ -675,15 +675,15 @@ pub enum Response {
     ConfigurationDone,
     Initialize(Capabilities),
     Launch,
-    RunInTerminal(RunInTerminalBody),
+    RunInTerminal(RunInTerminalResponse),
     Scopes(ScopesResponse),
-    StackTrace(StackTraceBody),
+    StackTrace(StackTraceResponse),
     StepIn,
-    Threads(ThreadsBody),
+    Threads(ThreadsResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RunInTerminalBody {
+pub struct RunInTerminalResponse {
     /// The process ID. The value should be less than or equal to 2147483647
     /// (2^31-1).
     #[serde(rename = "processID")]
@@ -705,7 +705,7 @@ pub struct ScopesResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StackTraceBody {
+pub struct StackTraceResponse {
     /// The frames of the stackframe. If the array has length zero, there are no
     /// stackframes available.
     /// This means that there is no location information available.
@@ -722,7 +722,7 @@ pub struct StackTraceBody {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadsBody {
+pub struct ThreadsResponse {
     /// All threads.
     pub threads: Vec<Thread>,
 }

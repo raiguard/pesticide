@@ -179,7 +179,7 @@ fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<()> 
                 payload.seq,
                 success,
                 message,
-                Response::RunInTerminal(RunInTerminalBody {
+                Response::RunInTerminal(RunInTerminalResponse {
                     process_id: cmd.ok().map(|child| child.id()),
                     shell_process_id: None, // TEMPORARY:
                 }),
