@@ -14,7 +14,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         for msg in rx {
             let mut adapter = event_adapter.lock().unwrap();
             match msg {
-                AdapterMessage::Event(event) => handle_event(&mut adapter, event),
+                AdapterMessage::Event(event) => handle_event(&mut adapter, event.event),
                 AdapterMessage::Request(req) => handle_request(&mut adapter, req),
                 AdapterMessage::Response(res) => handle_response(&mut adapter, res),
             }
@@ -38,17 +38,14 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
             trace!("COMMAND: [{}]", cmd);
             match cmd {
                 "in" | "stepin" => {
-                    let req = AdapterMessage::Request(Request::StepIn(RequestPayload {
-                        seq: adapter.next_seq(),
-                        args: Some(StepInRequest {
+                    adapter
+                        .send_request(Request::StepIn(StepInRequestArgs {
                             thread_id: 1, // TEMPORARY:
                             single_thread: false,
                             target_id: None,
                             granularity: SteppingGranularity::Statement,
-                        }),
-                    }));
-
-                    adapter.tx.send(req).unwrap();
+                        }))
+                        .unwrap();
                 }
                 "threads" => {
                     for thread in adapter.threads.values() {
@@ -66,29 +63,26 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
 
     {
         // This will be dropped at the end of this inner scope, freeing it up
-        let adapter = adapter.lock().unwrap();
+        let mut adapter = adapter.lock().unwrap();
+        let adapter_id = adapter.config.adapter_id.clone();
 
         // Send initialize request
-        let init = AdapterMessage::Request(Request::Initialize(RequestPayload {
-            args: Some(InitializeRequest {
-                client_id: Some("pesticide".to_string()),
-                client_name: Some("Pesticide".to_string()),
-                adapter_id: adapter.config.adapter_id.clone(),
-                locale: Some("en-US".to_string()),
-                lines_start_at_1: true,
-                columns_start_at_1: true,
-                path_format: Some(InitializeRequestPathFormat::Path),
-                supports_variable_type: false,
-                supports_variable_paging: false,
-                supports_run_in_terminal_request: true,
-                supports_memory_references: false,
-                supports_progress_reporting: false,
-                supports_invalidated_event: false,
-                supports_memory_event: false,
-            }),
-            seq: 0,
-        }));
-        adapter.tx.send(init)?;
+        adapter.send_request(Request::Initialize(InitializeRequestArgs {
+            client_id: Some("pesticide".to_string()),
+            client_name: Some("Pesticide".to_string()),
+            adapter_id,
+            locale: Some("en-US".to_string()),
+            lines_start_at_1: true,
+            columns_start_at_1: true,
+            path_format: Some(InitializeRequestPathFormat::Path),
+            supports_variable_type: false,
+            supports_variable_paging: false,
+            supports_run_in_terminal_request: true,
+            supports_memory_references: false,
+            supports_progress_reporting: false,
+            supports_invalidated_event: false,
+            supports_memory_event: false,
+        }))?;
     }
 
     event_loop.join().unwrap();
@@ -107,131 +101,107 @@ fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
 
 fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
     match event {
-        Event::Continued(payload) => {
-            adapter.update_seq(payload.seq);
-
+        Event::Continued(_) => {
             println!("Continuing?");
         }
         Event::Exited(_) => handle_exited(adapter),
-        Event::Output(payload) => {
-            adapter.update_seq(payload.seq);
-            if let Some(body) = payload.body {
-                match body.category {
-                    Some(OutputEventCategory::Telemetry) => {
-                        info!("IDGAF about telemetry")
-                    } // IDGAF about telemetry
-                    _ => info!("[DEBUG ADAPTER] >> {}", body.output),
-                }
+        Event::Output(event) => {
+            match event.category {
+                Some(OutputEventCategory::Telemetry) => {
+                    info!("IDGAF about telemetry")
+                } // IDGAF about telemetry
+                _ => info!("[DEBUG ADAPTER] >> {}", event.output),
             }
         }
-        Event::Initialized(payload) => {
-            adapter.update_seq(payload.seq);
+        Event::Initialized => {
             info!("Debug adapter is initialized");
             // TODO: setBreakpoints, etc...
-            let req = AdapterMessage::Request(Request::ConfigurationDone(RequestPayload {
-                seq: adapter.next_seq(),
-                args: None,
-            }));
-
-            adapter.tx.send(req).unwrap();
+            adapter.send_request(Request::ConfigurationDone).unwrap();
         }
-        Event::Process(payload) => adapter.update_seq(payload.seq), // TODO: What is this event useful for?
-        Event::Stopped(payload) => {
-            adapter.update_seq(payload.seq);
-            if let Some(body) = payload.body {
-                println!("STOPPED on thread {}: {:?}", body.thread_id, body.reason);
+        Event::Process(_) => (), // TODO: What is this event useful for?
+        Event::Stopped(event) => {
+            println!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 
-                // Request threads
-                let req = AdapterMessage::Request(Request::Threads(RequestPayload {
-                    seq: adapter.next_seq(),
-                    args: None,
-                }));
-                adapter.tx.send(req).unwrap();
-            }
+            // Request threads
+            adapter.send_request(Request::Threads).unwrap();
         }
-        Event::Thread(payload) => {
-            adapter.update_seq(payload.seq);
-            if let Some(body) = payload.body {
-                info!("New thread started: {}", body.thread_id);
-                match body.reason {
-                    ThreadReason::Started => {
-                        adapter.threads.insert(
-                            body.thread_id,
-                            Thread {
-                                id: body.thread_id,
-                                // This will be replaced with the actual names in the Threads request
-                                name: format!("{}", body.thread_id),
-                            },
-                        );
+        Event::Thread(event) => {
+            info!("New thread started: {}", event.thread_id);
+            match event.reason {
+                ThreadReason::Started => {
+                    adapter.threads.insert(
+                        event.thread_id,
+                        Thread {
+                            id: event.thread_id,
+                            // This will be replaced with the actual names in the Threads request
+                            name: format!("{}", event.thread_id),
+                        },
+                    );
+                }
+                ThreadReason::Exited => {
+                    if adapter.threads.remove(&event.thread_id).is_none() {
+                        error!("Thread {} ended, but had no stored data", event.thread_id)
                     }
-                    ThreadReason::Exited => {
-                        if adapter.threads.remove(&body.thread_id).is_none() {
-                            error!("Thread {} ended, but had no stored data", body.thread_id)
-                        }
-                    }
-                };
-            }
+                }
+            };
         }
     }
 }
 
-fn handle_request(adapter: &mut MutexGuard<Adapter>, req: Request) {
+fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) {
     {
         // The only "reverse request" in the DAP is RunInTerminal
-        if let Request::RunInTerminal(req) = req {
-            if let Some(mut args) = req.args {
-                let mut term_cmd = adapter.config.term_cmd.clone();
-                term_cmd.append(&mut args.args);
+        if let Request::RunInTerminal(mut req) = payload.request {
+            let mut term_cmd = adapter.config.term_cmd.clone();
+            term_cmd.append(&mut req.args);
 
-                let cmd = Command::new(term_cmd[0].clone())
-                    .args(term_cmd[1..].to_vec())
-                    .spawn();
+            let cmd = Command::new(term_cmd[0].clone())
+                .args(term_cmd[1..].to_vec())
+                .spawn();
 
-                let (success, message) = match &cmd {
-                    Ok(_) => (true, None),
-                    Err(e) => {
-                        error!("Could not start debugee: {}", e);
-                        (false, Some(e.to_string()))
-                    }
-                };
+            let (success, message) = match &cmd {
+                Ok(_) => (true, None),
+                Err(e) => {
+                    error!("Could not start debugee: {}", e);
+                    (false, Some(e.to_string()))
+                }
+            };
 
-                let res = AdapterMessage::Response(Response::RunInTerminal(ResponsePayload {
-                    seq: adapter.next_seq(),
-                    request_seq: req.seq,
+            adapter
+                .send_response(
+                    payload.seq,
                     success,
                     message,
-                    body: Some(RunInTerminalResponse {
+                    Response::RunInTerminal(RunInTerminalResponseBody {
                         process_id: cmd.ok().map(|child| child.id()),
                         shell_process_id: None, // TEMPORARY:
                     }),
-                }));
-
-                adapter.tx.send(res).unwrap();
-            }
+                )
+                .unwrap();
         }
     }
 }
 
-fn handle_response(adapter: &mut MutexGuard<Adapter>, res: Response) {
-    match res {
-        Response::ConfigurationDone(_) => (),
-        Response::Initialize(res) => {
+fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
+    match res.response {
+        Response::ConfigurationDone => (),
+        Response::Initialize(capabilities) => {
             // Save capabilities to Adapter
-            adapter.capabilities = res.body;
+            adapter.capabilities = Some(capabilities);
 
             // Send launch request
             // This differs from how the DAP event order is specified on the DAP website
             // See https://github.com/microsoft/vscode/issues/4902#issuecomment-368583522
-            let seq = adapter.next_seq();
+            let launch_args = adapter.config.launch_args.clone();
             adapter
-                .tx
-                .send(AdapterMessage::Request(Request::Launch(RequestPayload {
-                    args: Some(adapter.config.launch_args.clone()),
-                    seq,
-                })))
+                .send_request(Request::Launch(LaunchRequestArgs {
+                    no_debug: false,
+                    restart: None,
+                    args: Some(launch_args),
+                }))
                 .unwrap();
         }
-        Response::Launch(res) => {
+        Response::Launch => {
             if res.success {
             } else {
                 error!(
@@ -242,35 +212,28 @@ fn handle_response(adapter: &mut MutexGuard<Adapter>, res: Response) {
         }
         Response::RunInTerminal(_) => (),
         Response::StackTrace(res) => {
-            if let Some(body) = res.body {
-                println!("{:#?}", body);
-            }
+            println!("{:#?}", res);
         }
-        Response::StepIn(_) => (),
+        Response::StepIn => (),
         Response::Threads(res) => {
-            if let Some(body) = res.body {
-                // Update the stored threads
-                let threads = &body.threads;
-                adapter.threads = threads
-                    .iter()
-                    .cloned()
-                    .map(|thread| (thread.id, thread))
-                    .collect();
+            // Update the stored threads
+            let threads = &res.threads;
+            adapter.threads = threads
+                .iter()
+                .cloned()
+                .map(|thread| (thread.id, thread))
+                .collect();
 
-                // Request stack frames for each thread
-                for thread in threads {
-                    let req = AdapterMessage::Request(Request::StackTrace(RequestPayload {
-                        seq: adapter.next_seq(),
-                        args: Some(StackTraceRequest {
-                            thread_id: thread.id,
-                            start_frame: None,
-                            levels: None,
-                            format: None,
-                        }),
-                    }));
-
-                    adapter.tx.send(req).unwrap();
-                }
+            // Request stack frames for each thread
+            for thread in threads {
+                adapter
+                    .send_request(Request::StackTrace(StackTraceRequestArgs {
+                        thread_id: thread.id,
+                        start_frame: None,
+                        levels: None,
+                        format: None,
+                    }))
+                    .unwrap();
             }
         }
     }

@@ -4,14 +4,14 @@ use anyhow::{bail, Context, Result};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread;
 
 pub struct Adapter {
     pub child: Child,
     pub config: Config,
     pub rx: Receiver<AdapterMessage>,
-    pub tx: Sender<AdapterMessage>,
+    // pub tx: Sender<AdapterMessage>,
     pub next_seq: u32,
 
     pub capabilities: Option<Capabilities>,
@@ -20,6 +20,8 @@ pub struct Adapter {
 
     /// Responses from the debug adapter will use the seq as an identifier
     requests: HashMap<u32, Request>,
+
+    stdin: BufWriter<ChildStdin>,
 }
 
 impl Adapter {
@@ -54,16 +56,15 @@ impl Adapter {
         });
 
         let stdin = BufWriter::new(child.stdin.take().context("Failed to open stdin")?);
-        let (in_tx, in_rx) = crossbeam_channel::bounded(1024);
-        thread::spawn(move || {
-            writer_loop(stdin, &in_rx).expect("Failed to read message from debug adapter");
-        });
+        // let (in_tx, in_rx) = crossbeam_channel::bounded(1024);
+        // thread::spawn(move || {
+        //     writer_loop(stdin, &in_rx).expect("Failed to read message from debug adapter");
+        // });
 
         Ok(Self {
             child,
             config,
             rx: out_rx,
-            tx: in_tx,
             next_seq: 0,
 
             capabilities: None,
@@ -71,6 +72,7 @@ impl Adapter {
             stack_frames: HashMap::new(),
 
             requests: HashMap::new(),
+            stdin,
         })
     }
 
@@ -86,14 +88,46 @@ impl Adapter {
         }
     }
 
-    pub fn send_request(&mut self, req: Request) {
+    pub fn send_request(&mut self, request: Request) -> Result<()> {
         let seq = self.next_seq();
 
-        self.requests.insert(seq, req.clone());
+        self.requests.insert(seq, request.clone());
 
-        self.tx.send(AdapterMessage::Request(req)).unwrap();
+        let req = serde_json::to_string(&AdapterMessage::Request(RequestPayload { seq, request }))?;
 
-        todo!()
+        self.write(req)?;
+
+        Ok(())
+    }
+
+    pub fn send_response(
+        &mut self,
+        request_seq: u32,
+        success: bool,
+        message: Option<String>,
+        response: Response,
+    ) -> Result<()> {
+        let seq = self.next_seq();
+
+        let res = serde_json::to_string(&AdapterMessage::Response(ResponsePayload {
+            seq,
+            request_seq,
+            success,
+            message,
+            response,
+        }))?;
+
+        self.write(res)?;
+
+        Ok(())
+    }
+
+    fn write(&mut self, msg: String) -> Result<()> {
+        debug!("[DEBUG ADAPTER] << {}", msg);
+        write!(self.stdin, "Content-Length: {}\r\n\r\n{}", msg.len(), msg)?;
+        self.stdin.flush()?;
+
+        Ok(())
     }
 }
 
@@ -137,20 +171,4 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
             Err(e) => error!("[ADAPTER RX] {}", e),
         }
     }
-}
-
-// Thread to write to the stdin of the debug adapter process
-fn writer_loop(mut writer: impl Write, rx: &Receiver<AdapterMessage>) -> Result<()> {
-    for request in rx {
-        let request = serde_json::to_string(&request)?;
-        debug!("[DEBUG ADAPTER] << {}", request);
-        write!(
-            writer,
-            "Content-Length: {}\r\n\r\n{}",
-            request.len(),
-            request
-        )?;
-        writer.flush()?;
-    }
-    Ok(())
 }
