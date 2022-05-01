@@ -876,7 +876,7 @@ pub struct Source {
     /// adapter has a name.
     ///
     /// When sending a source to the debug adapter this name is optional.
-    pub name: String,
+    pub name: Option<String>,
 
     /// The path of the source to be shown in the UI.
     /// It is only used to locate and load the content of the source if no
@@ -946,6 +946,7 @@ pub struct SourceBreakpoint {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StackFrame {
     /// An identifier for the stack frame. It must be unique across all threads.
     /// This id can be used to retrieve the scopes of the frame with the
@@ -989,11 +990,12 @@ pub struct StackFrame {
     /// frame that is used as a visual label or separator. A value of 'subtle' can
     /// be used to change the appearance of a frame in a 'subtle' way.
     /// Values: 'normal', 'label', 'subtle', etc.
-    pub presentation_hint: StackFramePresentationHint,
+    pub presentation_hint: Option<StackFramePresentationHint>,
 }
 
 /// Provides formatting information for a stack frame.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StackFrameFormat {
     /// Display the value in hex.
     #[serde(default)]
