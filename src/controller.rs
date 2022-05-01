@@ -108,9 +108,7 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
     match event {
         Event::Exited(_) => handle_exited(adapter),
         Event::Output(payload) => {
-            trace!("Updating seq");
             adapter.update_seq(payload.seq);
-            trace!("Updated seq");
             if let Some(body) = payload.body {
                 match body.category {
                     Some(OutputEventCategory::Telemetry) => {
@@ -120,7 +118,8 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
                 }
             }
         }
-        Event::Initialized(_) => {
+        Event::Initialized(payload) => {
+            adapter.update_seq(payload.seq);
             info!("Debug adapter is initialized");
             // TODO: setBreakpoints, etc...
             let req = AdapterMessage::Request(Request::ConfigurationDone(RequestPayload {
@@ -130,21 +129,23 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
 
             adapter.tx.send(req).unwrap();
         }
-        Event::Process(_) => (), // TODO: What is this event useful for?
-        Event::Stopped(event) => {
-            if let Some(body) = event.body {
+        Event::Process(payload) => adapter.update_seq(payload.seq), // TODO: What is this event useful for?
+        Event::Stopped(payload) => {
+            adapter.update_seq(payload.seq);
+            if let Some(body) = payload.body {
                 println!("STOPPED on thread {}: {:?}", body.thread_id, body.reason);
-            }
 
-            // Request threads
-            let req = AdapterMessage::Request(Request::Threads(RequestPayload {
-                seq: adapter.next_seq(),
-                args: None,
-            }));
-            adapter.tx.send(req).unwrap();
+                // Request threads
+                let req = AdapterMessage::Request(Request::Threads(RequestPayload {
+                    seq: adapter.next_seq(),
+                    args: None,
+                }));
+                adapter.tx.send(req).unwrap();
+            }
         }
-        Event::Thread(event) => {
-            if let Some(body) = event.body {
+        Event::Thread(payload) => {
+            adapter.update_seq(payload.seq);
+            if let Some(body) = payload.body {
                 info!("New thread started: {}", body.thread_id);
                 match body.reason {
                     ThreadReason::Started => {
