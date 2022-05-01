@@ -440,18 +440,18 @@ pub enum RunInTerminalKind {
 pub struct SetBreakpointsRequest {
     // The source location of the breakpoints; either 'source.path' or
     // 'source.reference' must be specified.
-    source: Source,
+    pub source: Source,
 
     // The code locations of the breakpoints.
-    breakpoints: Vec<SourceBreakpoint>,
+    pub breakpoints: Vec<SourceBreakpoint>,
 
     // Deprecated: The code locations of the breakpoints.
-    lines: Option<Vec<u32>>,
+    pub lines: Option<Vec<u32>>,
 
     // A value of true indicates that the underlying source has been modified
     // which results in new breakpoint locations.
     #[serde(default)]
-    source_modified: bool,
+    pub source_modified: bool,
 }
 
 /// The request returns a stacktrace from the current execution state of a given
@@ -471,19 +471,19 @@ pub struct SetBreakpointsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct StackTraceRequest {
     /// Retrieve the stacktrace for this thread.
-    thread_id: u32,
+    pub thread_id: u32,
 
     /// The index of the first frame to return, if omitted frames start at 0.
-    start_frame: Option<u32>,
+    pub start_frame: Option<u32>,
 
     /// The maximum number of frames to return. If levels is not specified or 0,
     /// all frames are returned.
-    levels: Option<u32>,
+    pub levels: Option<u32>,
 
     /// Specifies details on how to format the stack frames.
     /// The attribute is only honored by a debug adapter if the capability
     /// 'supportsValueFormattingOptions' is true.
-    format: Option<StackFrameFormat>,
+    pub format: Option<StackFrameFormat>,
 }
 
 /// The request resumes the given thread to step into a function/method and
@@ -589,6 +589,7 @@ pub struct RunInTerminalResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StackTraceResponse {
     /// The frames of the stackframe. If the array has length zero, there are no
     /// stackframes available.
@@ -619,180 +620,180 @@ pub struct ThreadsResponse {
 pub struct Capabilities {
     /// The debug adapter supports the 'configurationDone' request.
     #[serde(default)]
-    supports_configuration_done_request: bool,
+    pub supports_configuration_done_request: bool,
 
     /// The debug adapter supports function breakpoints.
     #[serde(default)]
-    supports_function_breakpoints: bool,
+    pub supports_function_breakpoints: bool,
 
     /// The debug adapter supports conditional breakpoints.
     #[serde(default)]
-    supports_conditional_breakpoints: bool,
+    pub supports_conditional_breakpoints: bool,
 
     /// The debug adapter supports breakpoints that break execution after a
     /// specified number of hits.
     #[serde(default)]
-    supports_hit_conditional_breakpoints: bool,
+    pub supports_hit_conditional_breakpoints: bool,
 
     /// The debug adapter supports a (side effect free) evaluate request for
     /// data hovers.
     #[serde(default)]
-    supports_evaluate_for_hovers: bool,
+    pub supports_evaluate_for_hovers: bool,
 
     /// Available exception filter options for the 'setExceptionBreakpoints'
     /// request.
     #[serde(default)]
-    exception_breakpoint_filters: Option<Vec<ExceptionBreakpointsFilter>>,
+    pub exception_breakpoint_filters: Option<Vec<ExceptionBreakpointsFilter>>,
 
     /// The debug adapter supports stepping back via the 'stepBack' and
     /// 'reverseContinue' requests.
     #[serde(default)]
-    supports_step_back: bool,
+    pub supports_step_back: bool,
 
     /// The debug adapter supports setting a variable to a value.
     #[serde(default)]
-    supports_set_variable: bool,
+    pub supports_set_variable: bool,
 
     /// The debug adapter supports restarting a frame.
     #[serde(default)]
-    supports_restart_frame: bool,
+    pub supports_restart_frame: bool,
 
     /// The debug adapter supports the 'gotoTargets' request.
     #[serde(default)]
-    supports_goto_targets_request: bool,
+    pub supports_goto_targets_request: bool,
 
     /// The debug adapter supports the 'stepInTargets' request.
     #[serde(default)]
-    supports_step_in_targets_request: bool,
+    pub supports_step_in_targets_request: bool,
 
     /// The debug adapter supports the 'completions' request.
     #[serde(default)]
-    supports_completions_request: bool,
+    pub supports_completions_request: bool,
 
     /// The set of characters that should trigger completion in a REPL. If not
     /// specified, the UI should assume the '.' character.
     #[serde(default)]
-    completion_trigger_characters: bool,
+    pub completion_trigger_characters: bool,
 
     /// The debug adapter supports the 'modules' request.
     #[serde(default)]
-    supports_modules_request: bool,
+    pub supports_modules_request: bool,
 
     /// The set of additional module information exposed by the debug adapter.
     #[serde(default)]
-    additional_module_columns: bool,
+    pub additional_module_columns: bool,
 
     /// Checksum algorithms supported by the debug adapter.
     #[serde(default)]
-    supported_checksum_algorithms: bool,
+    pub supported_checksum_algorithms: bool,
 
     /// The debug adapter supports the 'restart' request. In this case a client
     /// should not implement 'restart' by terminating and relaunching the
     /// adapter but by calling the RestartRequest.
     #[serde(default)]
-    supports_restart_request: bool,
+    pub supports_restart_request: bool,
 
     /// The debug adapter supports 'exceptionOptions' on the
     /// setExceptionBreakpoints request.
     #[serde(default)]
-    supports_exception_options: bool,
+    pub supports_exception_options: bool,
 
     /// The debug adapter supports a 'format' attribute on the
     /// stackTraceRequest, variablesRequest, and evaluateRequest.
     #[serde(default)]
-    supports_value_formatting_options: bool,
+    pub supports_value_formatting_options: bool,
 
     /// The debug adapter supports the 'exceptionInfo' request.
     #[serde(default)]
-    supports_exception_info_request: bool,
+    pub supports_exception_info_request: bool,
 
     /// The debug adapter supports the 'terminateDebuggee' attribute on the
     /// 'disconnect' request.
     #[serde(default)]
-    support_terminate_debuggee: bool,
+    pub support_terminate_debuggee: bool,
 
     /// The debug adapter supports the 'suspendDebuggee' attribute on the
     /// 'disconnect' request.
     #[serde(default)]
-    support_suspend_debuggee: bool,
+    pub support_suspend_debuggee: bool,
 
     /// The debug adapter supports the delayed loading of parts of the stack,
     /// which requires that both the 'startFrame' and 'levels' arguments and an
     /// optional 'totalFrames' result of the 'StackTrace' request are
     /// supported.
     #[serde(default)]
-    supports_delayed_stack_trace_loading: bool,
+    pub supports_delayed_stack_trace_loading: bool,
 
     /// The debug adapter supports the 'loadedSources' request.
     #[serde(default)]
-    supports_loaded_sources_request: bool,
+    pub supports_loaded_sources_request: bool,
 
     /// The debug adapter supports logpoints by interpreting the 'logMessage'
     /// attribute of the SourceBreakpoint.
     #[serde(default)]
-    supports_log_points: bool,
+    pub supports_log_points: bool,
 
     /// The debug adapter supports the 'terminateThreads' request.
     #[serde(default)]
-    supports_terminate_threads_request: bool,
+    pub supports_terminate_threads_request: bool,
 
     /// The debug adapter supports the 'setExpression' request.
     #[serde(default)]
-    supports_set_expression: bool,
+    pub supports_set_expression: bool,
 
     /// The debug adapter supports the 'terminate' request.
     #[serde(default)]
-    supports_terminate_request: bool,
+    pub supports_terminate_request: bool,
 
     /// The debug adapter supports data breakpoints.
     #[serde(default)]
-    supports_data_breakpoints: bool,
+    pub supports_data_breakpoints: bool,
 
     /// The debug adapter supports the 'readMemory' request.
     #[serde(default)]
-    supports_read_memory_request: bool,
+    pub supports_read_memory_request: bool,
 
     /// The debug adapter supports the 'writeMemory' request.
     #[serde(default)]
-    supports_write_memory_request: bool,
+    pub supports_write_memory_request: bool,
 
     /// The debug adapter supports the 'disassemble' request.
     #[serde(default)]
-    supports_disassemble_request: bool,
+    pub supports_disassemble_request: bool,
 
     /// The debug adapter supports the 'cancel' request.
     #[serde(default)]
-    supports_cancel_request: bool,
+    pub supports_cancel_request: bool,
 
     /// The debug adapter supports the 'breakpointLocations' request.
     #[serde(default)]
-    supports_breakpoint_locations_request: bool,
+    pub supports_breakpoint_locations_request: bool,
 
     /// The debug adapter supports the 'clipboard' context value in the
     /// 'evaluate' request.
     #[serde(default)]
-    supports_clipboard_context: bool,
+    pub supports_clipboard_context: bool,
 
     /// The debug adapter supports stepping granularities (argument
     /// 'granularity') for the stepping requests.
     #[serde(default)]
-    supports_stepping_granularity: bool,
+    pub supports_stepping_granularity: bool,
 
     /// The debug adapter supports adding breakpoints based on instruction
     /// references.
     #[serde(default)]
-    supports_instruction_breakpoints: bool,
+    pub supports_instruction_breakpoints: bool,
 
     /// The debug adapter supports 'filterOptions' as an argument on the
     /// 'setExceptionBreakpoints' request.
     #[serde(default)]
-    supports_exception_filter_options: bool,
+    pub supports_exception_filter_options: bool,
 
     /// The debug adapter supports the 'singleThread' property on the execution
     /// requests ('continue', 'next', 'stepIn', 'stepOut', 'reverseContinue',
     /// 'stepBack').
     #[serde(default)]
-    supports_single_thread_execution_requests: bool,
+    pub supports_single_thread_execution_requests: bool,
 }
 
 /// The checksum of an item calculated by the specified algorithm.
@@ -831,30 +832,30 @@ pub enum SourcePresentationHint {
 pub struct ExceptionBreakpointsFilter {
     /// The internal ID of the filter option. This value is passed to the
     /// 'setExceptionBreakpoints' request.
-    filter: String,
+    pub filter: String,
 
     /// The name of the filter option. This will be shown in the UI.
-    label: String,
+    pub label: String,
 
     /// An optional help text providing additional information about the
     /// exception filter. This String is typically shown as a hover and must be
     /// translated.
-    description: Option<String>,
+    pub description: Option<String>,
 
     /// Initial value of the filter option. If not specified a value 'false' is
     /// assumed.
     #[serde(default)]
-    default: bool,
+    pub default: bool,
 
     /// Controls whether a condition can be specified for this filter option.
     /// If false or missing, a condition can not be set.
     #[serde(default)]
-    supports_condition: bool,
+    pub supports_condition: bool,
 
     /// An optional help text providing information about the condition. This
     /// string is shown as the placeholder text for a text box and must be
     /// translated.
-    condition_description: Option<String>,
+    pub condition_description: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -949,46 +950,46 @@ pub struct StackFrame {
     /// An identifier for the stack frame. It must be unique across all threads.
     /// This id can be used to retrieve the scopes of the frame with the
     /// 'scopesRequest' or to restart the execution of a stackframe.
-    id: u32,
+    pub id: u32,
 
     /// The name of the stack frame, typically a method name.
-    name: String,
+    pub name: String,
 
     /// The optional source of the frame.
-    source: Option<Source>,
+    pub source: Option<Source>,
 
     /// The line within the file of the frame. If source is null or doesn't
     /// exist, line is 0 and must be ignored.
-    line: u32,
+    pub line: u32,
 
     /// The column within the line. If source is null or doesn't exist, column is
     /// 0 and must be ignored.
-    column: u32,
+    pub column: u32,
 
     /// An optional end line of the range covered by the stack frame.
-    end_line: Option<u32>,
+    pub end_line: Option<u32>,
 
     /// An optional end column of the range covered by the stack frame.
-    end_column: Option<u32>,
+    pub end_column: Option<u32>,
 
     /// Indicates whether this frame can be restarted with the 'restart' request.
     /// Clients should only use this if the debug adapter supports the 'restart'
     /// request (capability 'supportsRestartRequest' is true).
-    can_restart: Option<bool>,
+    pub can_restart: Option<bool>,
 
     /// Optional memory reference for the current instruction pointer in this
     /// frame.
-    instruction_pointer_reference: Option<String>,
+    pub instruction_pointer_reference: Option<String>,
 
     /// The module associated with this frame, if any.
-    module_id: Option<ModuleId>,
+    pub module_id: Option<ModuleId>,
 
     /// An optional hint for how to present this frame in the UI.
     /// A value of 'label' can be used to indicate that the frame is an artificial
     /// frame that is used as a visual label or separator. A value of 'subtle' can
     /// be used to change the appearance of a frame in a 'subtle' way.
     /// Values: 'normal', 'label', 'subtle', etc.
-    presentation_hint: StackFramePresentationHint,
+    pub presentation_hint: StackFramePresentationHint,
 }
 
 /// Provides formatting information for a stack frame.
@@ -997,43 +998,43 @@ pub struct StackFrameFormat {
     /// Display the value in hex.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    hex: bool,
+    pub hex: bool,
 
     /// Displays parameters for the stack frame.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    parameters: bool,
+    pub parameters: bool,
 
     /// Displays the types of parameters for the stack frame.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    parameter_types: bool,
+    pub parameter_types: bool,
 
     /// Displays the names of parameters for the stack frame.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    parameter_names: bool,
+    pub parameter_names: bool,
 
     /// Displays the values of parameters for the stack frame.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    parameter_values: bool,
+    pub parameter_values: bool,
 
     /// Displays the line number of the stack frame.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    line: bool,
+    pub line: bool,
 
     /// Displays the module of the stack frame.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    module: bool,
+    pub module: bool,
 
     /// Includes all stack frames, including those the debug adapter might
     /// otherwise hide.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    include_all: bool,
+    pub include_all: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
