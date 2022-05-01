@@ -80,6 +80,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                     }
                 },
                 AdapterMessage::Request(req) => {
+                    // The only "reverse request" in the DAP is RunInTerminal
                     if let Request::RunInTerminal(req) = req {
                         if let Some(mut args) = req.args {
                             let mut term_cmd = adapter.config.term_cmd.clone();
@@ -146,18 +147,35 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
                     Response::RunInTerminal(_) => (),
                     Response::StackTrace(res) => {
                         if let Some(body) = res.body {
-                            // TODO:
+                            println!("{:#?}", body);
                         }
                     }
                     Response::StepIn(_) => (),
                     Response::Threads(res) => {
                         if let Some(body) = res.body {
                             // Update the stored threads
-                            let threads = body.threads;
+                            let threads = &body.threads;
                             adapter.threads = threads
-                                .into_iter()
+                                .iter()
+                                .cloned()
                                 .map(|thread| (thread.id, thread))
                                 .collect();
+
+                            // Request stack frames for each thread
+                            for thread in threads {
+                                let req =
+                                    AdapterMessage::Request(Request::StackTrace(RequestPayload {
+                                        seq: adapter.next_seq(),
+                                        args: Some(StackTraceRequest {
+                                            thread_id: thread.id,
+                                            start_frame: None,
+                                            levels: None,
+                                            format: None,
+                                        }),
+                                    }));
+
+                                adapter.tx.send(req).unwrap();
+                            }
                         }
                     }
                 },
