@@ -11,8 +11,6 @@ pub struct Adapter {
     pub child: Child,
     pub config: Config,
     pub rx: Receiver<AdapterMessage>,
-    // pub tx: Sender<AdapterMessage>,
-    pub next_seq: u32,
 
     pub capabilities: Option<Capabilities>,
     pub threads: HashMap<u32, Thread>,
@@ -24,6 +22,7 @@ pub struct Adapter {
     requests: HashMap<u32, Request>,
 
     stdin: BufWriter<ChildStdin>,
+    next_seq: u32,
 }
 
 impl Adapter {
@@ -54,7 +53,7 @@ impl Adapter {
         let stdout = BufReader::new(child.stdout.take().context("Failed to open stdout")?);
         let (out_tx, out_rx) = crossbeam_channel::bounded(1024);
         thread::spawn(move || {
-            reader_loop(stdout, &out_tx).expect("Failed to read message from debug adapter");
+            reader_loop(stdout, out_tx).expect("Failed to read message from debug adapter");
         });
 
         let stdin = BufWriter::new(child.stdin.take().context("Failed to open stdin")?);
@@ -63,7 +62,6 @@ impl Adapter {
             child,
             config,
             rx: out_rx,
-            next_seq: 0,
 
             capabilities: None,
             threads: HashMap::new(),
@@ -72,7 +70,9 @@ impl Adapter {
             variables: HashMap::new(),
 
             requests: HashMap::new(),
+
             stdin,
+            next_seq: 0,
         })
     }
 
@@ -139,7 +139,7 @@ impl Adapter {
     }
 }
 
-fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<()> {
+fn reader_loop(mut reader: impl BufRead, tx: Sender<AdapterMessage>) -> Result<()> {
     let mut headers = HashMap::new();
     loop {
         // Parse headers
