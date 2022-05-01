@@ -19,7 +19,7 @@ toml = "0.5.9"
 
 # Optimize releases for size - the speed is plenty good enough
 [profile.release]
-codegen_units = 1
+codegen-units = 1
 lto = true
 opt-level = "z"
 strip = true
