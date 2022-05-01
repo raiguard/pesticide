@@ -40,7 +40,7 @@ fn main() -> Result<()> {
         }
         data_dir.join("pesticide.log")
     };
-    WriteLogger::init(LevelFilter::Debug, SLConfig::default(), File::create(path)?)?;
+    WriteLogger::init(LevelFilter::Trace, SLConfig::default(), File::create(path)?)?;
 
     debug!("{:?}", cli);
 
