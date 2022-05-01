@@ -40,11 +40,11 @@ pub enum Event {
     ///
     /// It is only necessary to send a ‘continued’ event if there was no
     /// previous request that implied this.
-    Continued(ContinuedEventBody),
+    Continued(ContinuedBody),
 
     /// The event indicates that the debuggee has exited and returns its exit
     /// code.
-    Exited(ExitedEventBody),
+    Exited(ExitedBody),
 
     /// This event indicates that the debug adapter is ready to accept
     /// configuration requests (e.g. SetBreakpointsRequest,
@@ -70,26 +70,26 @@ pub enum Event {
     Initialized,
 
     /// The event indicates that the target has produced some output.
-    Output(OutputEventBody),
+    Output(OutputBody),
 
     /// The event indicates that the debugger has begun debugging a new process.
     /// Either one that it has launched, or one that it has attached to.
-    Process(ProcessEventBody),
+    Process(ProcessBody),
 
     /// The event indicates that the execution of the debuggee has stopped due
     /// to some condition.
     ///
     /// This can be caused by a break point previously set, a stepping request
     /// has completed, by executing a debugger statement etc.
-    Stopped(StoppedEventBody),
+    Stopped(StoppedBody),
 
     /// The event indicates that a thread has started or exited.
-    Thread(ThreadEventBody),
+    Thread(ThreadBody),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContinuedEventBody {
+pub struct ContinuedBody {
     /// The thread which was continued.
     thread_id: u32,
 
@@ -101,24 +101,24 @@ pub struct ContinuedEventBody {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExitedEventBody {
+pub struct ExitedBody {
     /// The exit code returned from the debugee.
     pub exit_code: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OutputEventBody {
+pub struct OutputBody {
     /// The output category. If not specified or if the category is not
     /// understood by the client, 'console' is assumed.
-    pub category: Option<OutputEventCategory>,
+    pub category: Option<OutputCategory>,
 
     /// The output to report.
     pub output: String,
 
     /// Support for keeping an output log organized by grouping related
     /// messages.
-    pub group: Option<OutputEventGroup>,
+    pub group: Option<OutputGroup>,
 
     /// If an attribute 'variablesReference' exists and its value is > 0, the
     /// output contains objects which can be retrieved by passing
@@ -143,7 +143,7 @@ pub struct OutputEventBody {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum OutputEventCategory {
+pub enum OutputCategory {
     /// Show the output in the client's default message UI, e.g. a
     /// 'debug console'. This category should only be used for informational
     /// output from the debugger (as opposed to the debuggee).
@@ -170,7 +170,7 @@ pub enum OutputEventCategory {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum OutputEventGroup {
+pub enum OutputGroup {
     /// Start a new group in expanded mode. Subsequent output events are
     /// members of the group and should be shown indented.
     /// The 'output' attribute becomes the name of the group and is not
@@ -193,7 +193,7 @@ pub enum OutputEventGroup {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcessEventBody {
+pub struct ProcessBody {
     /// The logical name of the process. This is usually the full path to
     /// process's executable file. _example: /home/example/myproj/program.js.
     pub name: String,
@@ -231,7 +231,7 @@ pub enum ProcessStartMethod {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StoppedEventBody {
+pub struct StoppedBody {
     /// The reason for the event.
     /// For backward compatibility this string is shown in the UI if the
     /// 'description' attribute is missing (but it must not be translated).
@@ -292,7 +292,7 @@ pub enum StoppedReason {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadEventBody {
+pub struct ThreadBody {
     /// The reason for the event.
     pub reason: ThreadReason,
 
@@ -348,14 +348,14 @@ pub enum Request {
     /// response.
     ///
     /// The 'initialize' request may only be sent once.
-    Initialize(InitializeRequestArgs),
+    Initialize(InitializeArgs),
 
     /// This launch request is sent from the client to the debug adapter to
     /// start the debuggee with or without debugging (if ‘noDebug’ is true).
     ///
     /// Since launching is debugger/runtime specific, the arguments for this
     /// request are not part of this specification.
-    Launch(LaunchRequestArgs),
+    Launch(LaunchArgs),
 
     /// This optional request is sent from the debug adapter to the client to
     /// run a command in a terminal.
@@ -366,7 +366,7 @@ pub enum Request {
     /// This request should only be called if the client has passed the value
     /// true for the ‘supportsRunInTerminalRequest’ capability of the
     /// ‘initialize’ request.
-    RunInTerminal(RunInTerminalRequestArgs),
+    RunInTerminal(RunInTerminalArgs),
 
     /// Sets multiple breakpoints for a single source and clears all previous
     /// breakpoints in that source.
@@ -375,7 +375,7 @@ pub enum Request {
     ///
     /// When a breakpoint is hit, a ‘stopped’ event (with reason ‘breakpoint’)
     /// is generated.
-    SetBreakpoints(SetBreakpointsRequestArgs),
+    SetBreakpoints(SetBreakpointsArgs),
 
     /// The request returns a stacktrace from the current execution state of a
     /// given thread.
@@ -391,7 +391,7 @@ pub enum Request {
     /// totalFrames decide how to proceed. In any case a client should be
     /// prepared to receive less frames than requested, which is an indication
     /// that the end of the stack has been reached.
-    StackTrace(StackTraceRequestArgs),
+    StackTrace(StackTraceArgs),
 
     /// The request resumes the given thread to step into a function/method and
     /// allows all other threads to run freely by resuming them.
@@ -414,7 +414,7 @@ pub enum Request {
     ///
     /// The list of possible targets for a given source line can be retrieved
     /// via the 'stepInTargets' request.
-    StepIn(StepInRequestArgs),
+    StepIn(StepInArgs),
 
     /// The request retrieves a list of all threads.
     Threads,
@@ -422,7 +422,7 @@ pub enum Request {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitializeRequestArgs {
+pub struct InitializeArgs {
     /// The ID of the (frontend) client using this adapter.
     #[serde(rename = "clientID")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -452,7 +452,7 @@ pub struct InitializeRequestArgs {
 
     /// Determines in what format paths are specified. The default is 'path',
     /// which is the native format.
-    pub path_format: Option<InitializeRequestPathFormat>,
+    pub path_format: Option<InitializePathFormat>,
 
     /// Client supports the optional type attribute for variables.
     #[serde(default)]
@@ -492,14 +492,14 @@ pub struct InitializeRequestArgs {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum InitializeRequestPathFormat {
+pub enum InitializePathFormat {
     Path,
     Uri,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LaunchRequestArgs {
+pub struct LaunchArgs {
     /// If noDebug is true, the launch request should launch the program without
     /// enabling debugging.
     #[serde(default)]
@@ -518,7 +518,7 @@ pub struct LaunchRequestArgs {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RunInTerminalRequestArgs {
+pub struct RunInTerminalArgs {
     /// What kind of terminal to launch.
     pub kind: RunInTerminalKind,
 
@@ -546,7 +546,7 @@ pub enum RunInTerminalKind {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SetBreakpointsRequestArgs {
+pub struct SetBreakpointsArgs {
     // The source location of the breakpoints; either 'source.path' or
     // 'source.reference' must be specified.
     pub source: Source,
@@ -565,7 +565,7 @@ pub struct SetBreakpointsRequestArgs {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StackTraceRequestArgs {
+pub struct StackTraceArgs {
     /// Retrieve the stacktrace for this thread.
     pub thread_id: u32,
 
@@ -584,7 +584,7 @@ pub struct StackTraceRequestArgs {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StepInRequestArgs {
+pub struct StepInArgs {
     /// Specifies the thread for which to resume execution for one step-into
     /// (of the given granularity).
     pub thread_id: u32,
@@ -643,14 +643,14 @@ pub enum Response {
     ConfigurationDone,
     Initialize(Capabilities),
     Launch,
-    RunInTerminal(RunInTerminalResponseBody),
-    StackTrace(StackTraceResponseBody),
+    RunInTerminal(RunInTerminalBody),
+    StackTrace(StackTraceBody),
     StepIn,
-    Threads(ThreadsResponseBody),
+    Threads(ThreadsBody),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RunInTerminalResponseBody {
+pub struct RunInTerminalBody {
     /// The process ID. The value should be less than or equal to 2147483647
     /// (2^31-1).
     #[serde(rename = "processID")]
@@ -664,7 +664,7 @@ pub struct RunInTerminalResponseBody {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StackTraceResponseBody {
+pub struct StackTraceBody {
     /// The frames of the stackframe. If the array has length zero, there are no
     /// stackframes available.
     /// This means that there is no location information available.
@@ -681,7 +681,7 @@ pub struct StackTraceResponseBody {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadsResponseBody {
+pub struct ThreadsBody {
     /// All threads.
     pub threads: Vec<Thread>,
 }
@@ -1190,8 +1190,8 @@ mod tests {
             msg,
             AdapterMessage::Event(EventPayload {
                 seq: 1,
-                event: Event::Output(OutputEventBody {
-                    category: Some(OutputEventCategory::Console),
+                event: Event::Output(OutputBody {
+                    category: Some(OutputCategory::Console),
                     output: "Hello world!".to_string(),
                     group: None,
                     variables_reference: None,
@@ -1228,14 +1228,14 @@ mod tests {
             msg,
             AdapterMessage::Request(RequestPayload {
                 seq: 0,
-                request: Request::Initialize(InitializeRequestArgs {
+                request: Request::Initialize(InitializeArgs {
                     client_id: Some("pesticide".to_string()),
                     client_name: Some("Pesticide".to_string()),
                     adapter_id: Some("pydbg".to_string()),
                     locale: Some("en-US".to_string()),
                     lines_start_at_1: true,
                     columns_start_at_1: true,
-                    path_format: Some(InitializeRequestPathFormat::Path),
+                    path_format: Some(InitializePathFormat::Path),
                     supports_variable_type: false,
                     supports_variable_paging: false,
                     supports_run_in_terminal_request: false,

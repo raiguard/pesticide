@@ -39,7 +39,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
             match cmd {
                 "in" | "stepin" => {
                     adapter
-                        .send_request(Request::StepIn(StepInRequestArgs {
+                        .send_request(Request::StepIn(StepInArgs {
                             thread_id: 1, // TEMPORARY:
                             single_thread: false,
                             target_id: None,
@@ -67,14 +67,14 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         let adapter_id = adapter.config.adapter_id.clone();
 
         // Send initialize request
-        adapter.send_request(Request::Initialize(InitializeRequestArgs {
+        adapter.send_request(Request::Initialize(InitializeArgs {
             client_id: Some("pesticide".to_string()),
             client_name: Some("Pesticide".to_string()),
             adapter_id,
             locale: Some("en-US".to_string()),
             lines_start_at_1: true,
             columns_start_at_1: true,
-            path_format: Some(InitializeRequestPathFormat::Path),
+            path_format: Some(InitializePathFormat::Path),
             supports_variable_type: false,
             supports_variable_paging: false,
             supports_run_in_terminal_request: true,
@@ -107,7 +107,7 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
         Event::Exited(_) => handle_exited(adapter),
         Event::Output(event) => {
             match event.category {
-                Some(OutputEventCategory::Telemetry) => {
+                Some(OutputCategory::Telemetry) => {
                     info!("IDGAF about telemetry")
                 } // IDGAF about telemetry
                 _ => info!("[DEBUG ADAPTER] >> {}", event.output),
@@ -172,7 +172,7 @@ fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) {
                     payload.seq,
                     success,
                     message,
-                    Response::RunInTerminal(RunInTerminalResponseBody {
+                    Response::RunInTerminal(RunInTerminalBody {
                         process_id: cmd.ok().map(|child| child.id()),
                         shell_process_id: None, // TEMPORARY:
                     }),
@@ -194,7 +194,7 @@ fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
             // See https://github.com/microsoft/vscode/issues/4902#issuecomment-368583522
             let launch_args = adapter.config.launch_args.clone();
             adapter
-                .send_request(Request::Launch(LaunchRequestArgs {
+                .send_request(Request::Launch(LaunchArgs {
                     no_debug: false,
                     restart: None,
                     args: Some(launch_args),
@@ -227,7 +227,7 @@ fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
             // Request stack frames for each thread
             for thread in threads {
                 adapter
-                    .send_request(Request::StackTrace(StackTraceRequestArgs {
+                    .send_request(Request::StackTrace(StackTraceArgs {
                         thread_id: thread.id,
                         start_frame: None,
                         levels: None,
