@@ -3,7 +3,7 @@ use crate::dap_types::*;
 use anyhow::Result;
 use std::io::Write;
 use std::process::Command;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::{io, thread};
 
 pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
@@ -92,7 +92,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     Ok(())
 }
 
-fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
+fn handle_exited(adapter: &mut Adapter) {
     // Stop the adapter
     if let Err(e) = adapter.child.kill() {
         error!("Failed to kill debug adapter: {}", e)
@@ -100,7 +100,7 @@ fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
     // Pesticide will exit due to the debug adapter pipe closing
 }
 
-fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) -> Result<()> {
+fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
     adapter.update_seq(payload.seq);
 
     match payload.event {
@@ -154,7 +154,7 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) -> Res
     Ok(())
 }
 
-fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) -> Result<()> {
+fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<()> {
     {
         adapter.update_seq(payload.seq);
 
@@ -190,7 +190,7 @@ fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) ->
     }
 }
 
-fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) -> Result<()> {
+fn handle_response(adapter: &mut Adapter, res: ResponsePayload) -> Result<()> {
     adapter.update_seq(res.seq);
 
     match res.response {
