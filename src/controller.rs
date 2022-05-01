@@ -107,6 +107,7 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) {
             println!("Continuing?");
         }
         Event::Exited(_) => handle_exited(adapter),
+        Event::Module(_) => (), // TODO:
         Event::Output(event) => {
             match event.category {
                 Some(OutputCategory::Telemetry) => {
@@ -120,7 +121,7 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) {
             // TODO: setBreakpoints, etc...
             adapter.send_request(Request::ConfigurationDone).unwrap();
         }
-        Event::Process(_) => (), // TODO: What is this event useful for?
+        Event::Process(_) => (), // TODO:
         Event::Stopped(event) => {
             println!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 

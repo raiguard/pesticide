@@ -69,6 +69,9 @@ pub enum Event {
     /// the configuration.
     Initialized,
 
+    /// The event indicates that some information about a module has changed.
+    Module(ModuleBody),
+
     /// The event indicates that the target has produced some output.
     Output(OutputBody),
 
@@ -104,6 +107,25 @@ pub struct ContinuedBody {
 pub struct ExitedBody {
     /// The exit code returned from the debugee.
     pub exit_code: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModuleBody {
+    /// The reason for the event.
+    pub reason: ModuleReason,
+
+    /// The new, changed, or removed module. In case of 'removed' only the
+    /// module id is used.
+    pub module: Module,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ModuleReason {
+    New,
+    Changed,
+    Removed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -891,6 +913,69 @@ pub enum ChecksumAlgorithm {
     Timestamp,
 }
 
+/// A Module object represents a row in the modules view.
+///
+/// Two attributes are mandatory: an id identifies a module in the modules view
+/// and is used in a ModuleEvent for identifying a module for adding, updating
+/// or deleting.
+///
+/// The name is used to minimally render the module in the UI.
+///
+/// Additional attributes can be added to the module. They will show up in the
+/// module View if they have a corresponding ColumnDescriptor.
+///
+/// To avoid an unnecessary proliferation of additional attributes with similar
+/// semantics but different names, we recommend to re-use attributes from the
+/// ‘recommended’ list below first, and only introduce new attributes if nothing
+/// appropriate could be found.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Module {
+    /// Unique identifier for the module.
+    id: ModuleId,
+
+    /// A name of the module.
+    name: String,
+
+    /// Logical full path to the module. The exact definition is implementation
+    /// defined, but usually this would be a full path to the on-disk file for
+    /// the module.
+    path: Option<String>,
+
+    /// True if the module is optimized.
+    #[serde(default)]
+    is_optimized: bool,
+
+    /// True if the module is considered 'user code' by a debugger that supports
+    /// 'Just My Code'.
+    #[serde(default)]
+    is_user_code: bool,
+
+    /// Version of Module.
+    version: Option<String>,
+
+    /// User understandable description of if symbols were found for the module
+    /// (ex: 'Symbols Loaded', 'Symbols not found', etc.
+    symbol_status: Option<String>,
+
+    /// Logical full path to the symbol file. The exact definition is
+    /// implementation defined.
+    symbol_file_path: Option<String>,
+
+    /// Module created or modified.
+    date_time_stamp: Option<String>,
+
+    /// Address range covered by this module.
+    address_range: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ModuleId {
+    Number(u32),
+    String(String),
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SourcePresentationHint {
@@ -930,13 +1015,6 @@ pub struct ExceptionBreakpointsFilter {
     /// string is shown as the placeholder text for a text box and must be
     /// translated.
     pub condition_description: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum ModuleId {
-    Number(u32),
-    String(String),
 }
 
 /// A Source is a descriptor for source code.
