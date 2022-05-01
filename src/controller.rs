@@ -14,7 +14,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         for msg in rx {
             let mut adapter = event_adapter.lock().unwrap();
             match msg {
-                AdapterMessage::Event(event) => handle_event(&mut adapter, event.event),
+                AdapterMessage::Event(event) => handle_event(&mut adapter, event),
                 AdapterMessage::Request(req) => handle_request(&mut adapter, req),
                 AdapterMessage::Response(res) => handle_response(&mut adapter, res),
             }
@@ -99,8 +99,10 @@ fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
     // Pesticide will exit due to the debug adapter pipe closing
 }
 
-fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
-    match event {
+fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) {
+    adapter.update_seq(payload.seq);
+
+    match payload.event {
         Event::Continued(_) => {
             println!("Continuing?");
         }
@@ -150,6 +152,8 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, event: Event) {
 
 fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) {
     {
+        adapter.update_seq(payload.seq);
+
         // The only "reverse request" in the DAP is RunInTerminal
         if let Request::RunInTerminal(mut req) = payload.request {
             let mut term_cmd = adapter.config.term_cmd.clone();
@@ -183,6 +187,8 @@ fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) {
 }
 
 fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
+    adapter.update_seq(res.seq);
+
     match res.response {
         Response::ConfigurationDone => (),
         Response::Initialize(capabilities) => {
