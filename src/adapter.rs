@@ -131,7 +131,6 @@ impl Adapter {
     }
 }
 
-// Thread to read the stdout of the debug adapter process.
 fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<()> {
     let mut headers = HashMap::new();
     loop {
@@ -153,17 +152,19 @@ fn reader_loop(mut reader: impl BufRead, tx: &Sender<AdapterMessage>) -> Result<
             }
             headers.insert(parts[0].to_string(), parts[1].to_string());
         }
+
         // Get the length of the message we are receiving
         let content_len = headers
             .get("Content-Length")
             .expect("Failed to find Content-Length header")
             .parse()
             .expect("Failed to parse Content-Length header");
-        // Now read that many characters to obtain the message
+
         let mut content = vec![0; content_len];
         reader.read_exact(&mut content)?;
         let content = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
         debug!("[DEBUG ADAPTER] >> {}", content);
+
         match serde_json::from_str::<AdapterMessage>(&content) {
             Ok(msg) => tx
                 .send(msg)

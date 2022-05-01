@@ -9,16 +9,17 @@ use std::{io, thread};
 pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     // Handle incoming messages
     let event_adapter = adapter.clone();
-    let event_loop = thread::spawn(move || {
+    let event_loop = thread::spawn(move || -> Result<()> {
         let rx = event_adapter.lock().unwrap().rx.clone();
         for msg in rx {
             let mut adapter = event_adapter.lock().unwrap();
             match msg {
-                AdapterMessage::Event(event) => handle_event(&mut adapter, event),
-                AdapterMessage::Request(req) => handle_request(&mut adapter, req),
-                AdapterMessage::Response(res) => handle_response(&mut adapter, res),
+                AdapterMessage::Event(event) => handle_event(&mut adapter, event)?,
+                AdapterMessage::Request(req) => handle_request(&mut adapter, req)?,
+                AdapterMessage::Response(res) => handle_response(&mut adapter, res)?,
             }
         }
+        Ok(())
     });
 
     // Basic CLI
@@ -85,7 +86,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         }))?;
     }
 
-    event_loop.join().unwrap();
+    event_loop.join().unwrap()?;
     cli_loop.join().unwrap();
 
     Ok(())
@@ -99,7 +100,7 @@ fn handle_exited(adapter: &mut MutexGuard<Adapter>) {
     // Pesticide will exit due to the debug adapter pipe closing
 }
 
-fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) {
+fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) -> Result<()> {
     adapter.update_seq(payload.seq);
 
     match payload.event {
@@ -119,14 +120,14 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) {
         Event::Initialized => {
             info!("Debug adapter is initialized");
             // TODO: setBreakpoints, etc...
-            adapter.send_request(Request::ConfigurationDone).unwrap();
+            adapter.send_request(Request::ConfigurationDone)?;
         }
         Event::Process(_) => (), // TODO:
         Event::Stopped(event) => {
             println!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 
             // Request threads
-            adapter.send_request(Request::Threads).unwrap();
+            adapter.send_request(Request::Threads)?;
         }
         Event::Thread(event) => {
             info!("New thread started: {}", event.thread_id);
@@ -148,10 +149,12 @@ fn handle_event(adapter: &mut MutexGuard<Adapter>, payload: EventPayload) {
                 }
             };
         }
-    }
+    };
+
+    Ok(())
 }
 
-fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) {
+fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) -> Result<()> {
     {
         adapter.update_seq(payload.seq);
 
@@ -172,22 +175,22 @@ fn handle_request(adapter: &mut MutexGuard<Adapter>, payload: RequestPayload) {
                 }
             };
 
-            adapter
-                .send_response(
-                    payload.seq,
-                    success,
-                    message,
-                    Response::RunInTerminal(RunInTerminalBody {
-                        process_id: cmd.ok().map(|child| child.id()),
-                        shell_process_id: None, // TEMPORARY:
-                    }),
-                )
-                .unwrap();
-        }
+            adapter.send_response(
+                payload.seq,
+                success,
+                message,
+                Response::RunInTerminal(RunInTerminalBody {
+                    process_id: cmd.ok().map(|child| child.id()),
+                    shell_process_id: None, // TEMPORARY:
+                }),
+            )?;
+        };
+
+        Ok(())
     }
 }
 
-fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
+fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) -> Result<()> {
     adapter.update_seq(res.seq);
 
     match res.response {
@@ -200,13 +203,11 @@ fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
             // This differs from how the DAP event order is specified on the DAP website
             // See https://github.com/microsoft/vscode/issues/4902#issuecomment-368583522
             let launch_args = adapter.config.launch_args.clone();
-            adapter
-                .send_request(Request::Launch(LaunchArgs {
-                    no_debug: false,
-                    restart: None,
-                    args: Some(launch_args),
-                }))
-                .unwrap();
+            adapter.send_request(Request::Launch(LaunchArgs {
+                no_debug: false,
+                restart: None,
+                args: Some(launch_args),
+            }))?;
         }
         Response::Launch => {
             if res.success {
@@ -233,15 +234,15 @@ fn handle_response(adapter: &mut MutexGuard<Adapter>, res: ResponsePayload) {
 
             // Request stack frames for each thread
             for thread in threads {
-                adapter
-                    .send_request(Request::StackTrace(StackTraceArgs {
-                        thread_id: thread.id,
-                        start_frame: None,
-                        levels: None,
-                        format: None,
-                    }))
-                    .unwrap();
+                adapter.send_request(Request::StackTrace(StackTraceArgs {
+                    thread_id: thread.id,
+                    start_frame: None,
+                    levels: None,
+                    format: None,
+                }))?;
             }
         }
-    }
+    };
+
+    Ok(())
 }
