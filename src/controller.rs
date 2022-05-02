@@ -38,6 +38,15 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
             let cmd = cmd.trim();
             trace!("COMMAND: [{}]", cmd);
             match cmd {
+                "c" | "continue" => {
+                    let thread_id = adapter.threads.iter().next().unwrap().1.id;
+                    adapter
+                        .send_request(Request::Continue(ContinueArgs {
+                            thread_id,
+                            single_thread: false,
+                        }))
+                        .unwrap()
+                }
                 "in" | "stepin" => {
                     adapter
                         .send_request(Request::StepIn(StepInArgs {
@@ -151,39 +160,37 @@ fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
 }
 
 fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<()> {
-    {
-        adapter.update_seq(payload.seq);
+    adapter.update_seq(payload.seq);
 
-        // The only "reverse request" in the DAP is RunInTerminal
-        if let Request::RunInTerminal(mut req) = payload.request {
-            let mut term_cmd = adapter.config.term_cmd.clone();
-            term_cmd.append(&mut req.args);
+    // The only "reverse request" in the DAP is RunInTerminal
+    if let Request::RunInTerminal(mut req) = payload.request {
+        let mut term_cmd = adapter.config.term_cmd.clone();
+        term_cmd.append(&mut req.args);
 
-            let cmd = Command::new(term_cmd[0].clone())
-                .args(term_cmd[1..].to_vec())
-                .spawn();
+        let cmd = Command::new(term_cmd[0].clone())
+            .args(term_cmd[1..].to_vec())
+            .spawn();
 
-            let (success, message) = match &cmd {
-                Ok(_) => (true, None),
-                Err(e) => {
-                    error!("Could not start debugee: {}", e);
-                    (false, Some(e.to_string()))
-                }
-            };
-
-            adapter.send_response(
-                payload.seq,
-                success,
-                message,
-                Response::RunInTerminal(RunInTerminalResponse {
-                    process_id: cmd.ok().map(|child| child.id()),
-                    shell_process_id: None, // TEMPORARY:
-                }),
-            )?;
+        let (success, message) = match &cmd {
+            Ok(_) => (true, None),
+            Err(e) => {
+                error!("Could not start debugee: {}", e);
+                (false, Some(e.to_string()))
+            }
         };
 
-        Ok(())
-    }
+        adapter.send_response(
+            payload.seq,
+            success,
+            message,
+            Response::RunInTerminal(RunInTerminalResponse {
+                process_id: cmd.ok().map(|child| child.id()),
+                shell_process_id: None, // TEMPORARY:
+            }),
+        )?;
+    };
+
+    Ok(())
 }
 
 fn handle_response(adapter: &mut Adapter, payload: ResponsePayload) -> Result<()> {
@@ -194,6 +201,7 @@ fn handle_response(adapter: &mut Adapter, payload: ResponsePayload) -> Result<()
 
     match payload.response {
         Response::ConfigurationDone => (),
+        Response::Continue(_) => (),
         Response::Initialize(capabilities) => {
             // Save capabilities to Adapter
             adapter.capabilities = Some(capabilities);

@@ -357,6 +357,14 @@ pub enum Request {
     /// ‘supportsConfigurationDoneRequest’ is true.
     ConfigurationDone,
 
+    /// The request resumes execution of all threads. If the debug adapter
+    /// supports single thread execution (see capability
+    /// ‘supportsSingleThreadExecutionRequests’) setting the ‘singleThread’
+    /// argument to true resumes only the specified thread. If not all threads
+    /// were resumed, the ‘allThreadsContinued’ attribute of the response must
+    /// be set to false.
+    Continue(ContinueArgs),
+
     /// The 'initialize' request is sent as the first request from the client to
     /// the debug adapter in order to configure it with client capabilities and
     /// to retrieve capabilities from the debug adapter.
@@ -449,6 +457,21 @@ pub enum Request {
     /// An optional filter can be used to limit the fetched children to either
     /// named or indexed children.
     Variables(VariablesArgs),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinueArgs {
+    /// Specifies the active thread. If the debug adapter supports single thread
+    /// execution (see 'supportsSingleThreadExecutionRequests') and the optional
+    /// argument 'singleThread' is true, only the thread with this ID is
+    /// resumed.
+    pub thread_id: u32,
+
+    /// If this optional flag is true, execution is resumed only for the thread
+    /// with given 'threadId'.
+    #[serde(default)]
+    pub single_thread: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -710,6 +733,7 @@ pub struct ResponsePayload {
 #[serde(rename_all = "camelCase")]
 pub enum Response {
     ConfigurationDone,
+    Continue(ContinueResponse),
     Initialize(Capabilities),
     Launch,
     RunInTerminal(RunInTerminalResponse),
@@ -718,6 +742,15 @@ pub enum Response {
     StepIn,
     Threads(ThreadsResponse),
     Variables(VariablesResponse),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinueResponse {
+    /// The value true (or a missing property) signals to the client that all
+    /// threads have been resumed. The value false must be returned if not all
+    /// threads were resumed.
+    pub all_threads_continued: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
