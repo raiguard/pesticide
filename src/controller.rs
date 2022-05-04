@@ -1,10 +1,10 @@
 use crate::adapter::Adapter;
 use crate::dap_types::*;
+use crate::ui;
 use anyhow::Result;
-use std::io::Write;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::{io, thread};
+use std::thread;
 
 pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     // Handle incoming messages
@@ -22,54 +22,58 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         Ok(())
     });
 
-    // Basic CLI
-    let cli_adapter = adapter.clone();
-    let cli_loop = thread::spawn(move || {
-        let stdin = io::stdin();
-        let stdout = std::io::stdout();
-        loop {
-            print!("> ");
-            stdout.lock().flush().unwrap();
-            let mut cmd = String::new();
-            stdin.read_line(&mut cmd).expect("Failed to read stdin");
+    // // Basic CLI
+    // let cli_adapter = adapter.clone();
+    // let cli_loop = thread::spawn(move || {
+    //     let stdin = io::stdin();
+    //     let stdout = std::io::stdout();
+    //     loop {
+    //         print!("> ");
+    //         stdout.lock().flush().unwrap();
+    //         let mut cmd = String::new();
+    //         stdin.read_line(&mut cmd).expect("Failed to read stdin");
 
-            let mut adapter = cli_adapter.lock().unwrap();
+    //         let mut adapter = cli_adapter.lock().unwrap();
 
-            let cmd = cmd.trim();
-            trace!("COMMAND: [{}]", cmd);
-            match cmd {
-                "c" | "continue" => {
-                    let thread_id = adapter.threads.iter().next().unwrap().1.id;
-                    adapter
-                        .send_request(Request::Continue(ContinueArgs {
-                            thread_id,
-                            single_thread: false,
-                        }))
-                        .unwrap()
-                }
-                "in" | "stepin" => {
-                    adapter
-                        .send_request(Request::StepIn(StepInArgs {
-                            thread_id: 1, // TEMPORARY:
-                            single_thread: false,
-                            target_id: None,
-                            granularity: SteppingGranularity::Statement,
-                        }))
-                        .unwrap();
-                }
-                "threads" => {
-                    for thread in adapter.threads.values() {
-                        println!("{}", thread.name);
-                    }
-                }
-                "quit" | "q" => {
-                    handle_exited(&mut adapter);
-                    return;
-                }
-                _ => eprintln!("Unrecognized command: '{}'", cmd),
-            }
-        }
-    });
+    //         let cmd = cmd.trim();
+    //         trace!("COMMAND: [{}]", cmd);
+    //         match cmd {
+    //             "c" | "continue" => {
+    //                 let thread_id = adapter.threads.iter().next().unwrap().1.id;
+    //                 adapter
+    //                     .send_request(Request::Continue(ContinueArgs {
+    //                         thread_id,
+    //                         single_thread: false,
+    //                     }))
+    //                     .unwrap()
+    //             }
+    //             "in" | "stepin" => {
+    //                 adapter
+    //                     .send_request(Request::StepIn(StepInArgs {
+    //                         thread_id: 1, // TEMPORARY:
+    //                         single_thread: false,
+    //                         target_id: None,
+    //                         granularity: SteppingGranularity::Statement,
+    //                     }))
+    //                     .unwrap();
+    //             }
+    //             "threads" => {
+    //                 for thread in adapter.threads.values() {
+    //                     println!("{}", thread.name);
+    //                 }
+    //             }
+    //             "quit" | "q" => {
+    //                 handle_exited(&mut adapter);
+    //                 return;
+    //             }
+    //             _ => eprintln!("Unrecognized command: '{}'", cmd),
+    //         }
+    //     }
+    // });
+
+    // TUI
+    let tui_adapter = adapter.clone();
+    let tui_loop = thread::spawn(move || -> Result<()> { ui::start(tui_adapter) });
 
     let mut adapter = adapter.lock().unwrap();
     let adapter_id = adapter.config.adapter_id.clone();
@@ -96,7 +100,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     drop(adapter);
 
     event_loop.join().unwrap()?;
-    cli_loop.join().unwrap();
+    tui_loop.join().unwrap()?;
 
     Ok(())
 }
@@ -114,7 +118,7 @@ fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
 
     match payload.event {
         Event::Continued(_) => {
-            println!("Continuing?");
+            info!("Continuing");
         }
         Event::Exited(_) => handle_exited(adapter),
         Event::Module(_) => (), // TODO:
@@ -129,7 +133,7 @@ fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
         }
         Event::Process(_) => (), // TODO:
         Event::Stopped(event) => {
-            println!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
+            info!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 
             // Request threads
             adapter.send_request(Request::Threads)?;
@@ -281,7 +285,7 @@ fn handle_response(adapter: &mut Adapter, payload: ResponsePayload) -> Result<()
             }
 
             if adapter.num_requests() == 0 {
-                println!("{:#?}", adapter.variables);
+                info!("{:#?}", adapter.variables);
             }
         }
     };

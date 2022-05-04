@@ -2,6 +2,7 @@ mod adapter;
 mod config;
 mod controller;
 mod dap_types;
+mod ui;
 
 #[macro_use]
 extern crate log;
