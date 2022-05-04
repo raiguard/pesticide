@@ -22,63 +22,13 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         Ok(())
     });
 
-    // // Basic CLI
-    // let cli_adapter = adapter.clone();
-    // let cli_loop = thread::spawn(move || {
-    //     let stdin = io::stdin();
-    //     let stdout = std::io::stdout();
-    //     loop {
-    //         print!("> ");
-    //         stdout.lock().flush().unwrap();
-    //         let mut cmd = String::new();
-    //         stdin.read_line(&mut cmd).expect("Failed to read stdin");
-
-    //         let mut adapter = cli_adapter.lock().unwrap();
-
-    //         let cmd = cmd.trim();
-    //         trace!("COMMAND: [{}]", cmd);
-    //         match cmd {
-    //             "c" | "continue" => {
-    //                 let thread_id = adapter.threads.iter().next().unwrap().1.id;
-    //                 adapter
-    //                     .send_request(Request::Continue(ContinueArgs {
-    //                         thread_id,
-    //                         single_thread: false,
-    //                     }))
-    //                     .unwrap()
-    //             }
-    //             "in" | "stepin" => {
-    //                 adapter
-    //                     .send_request(Request::StepIn(StepInArgs {
-    //                         thread_id: 1, // TEMPORARY:
-    //                         single_thread: false,
-    //                         target_id: None,
-    //                         granularity: SteppingGranularity::Statement,
-    //                     }))
-    //                     .unwrap();
-    //             }
-    //             "threads" => {
-    //                 for thread in adapter.threads.values() {
-    //                     println!("{}", thread.name);
-    //                 }
-    //             }
-    //             "quit" | "q" => {
-    //                 handle_exited(&mut adapter);
-    //                 return;
-    //             }
-    //             _ => eprintln!("Unrecognized command: '{}'", cmd),
-    //         }
-    //     }
-    // });
-
     // TUI
     let tui_adapter = adapter.clone();
     let tui_loop = thread::spawn(move || -> Result<()> { ui::start(tui_adapter) });
 
+    // Send initialize request
     let mut adapter = adapter.lock().unwrap();
     let adapter_id = adapter.config.adapter_id.clone();
-
-    // Send initialize request
     adapter.send_request(Request::Initialize(InitializeArgs {
         client_id: Some("pesticide".to_string()),
         client_name: Some("Pesticide".to_string()),
@@ -95,7 +45,6 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
         supports_invalidated_event: false,
         supports_memory_event: false,
     }))?;
-
     // Let's not block the main thread!
     drop(adapter);
 
