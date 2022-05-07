@@ -1,37 +1,64 @@
 use anyhow::Result;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+use crossbeam_channel::{Receiver, Sender};
+use crossterm::event::{read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::thread::{self, JoinHandle};
 use tui::backend::CrosstermBackend;
 use tui::widgets::{Block, Borders};
 use tui::Terminal;
 
-use crate::adapter::Adapter;
+pub fn start() -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)> {
+    // Handle input events on a separate thread to remove the need for a
+    // timeout and allow use of the select! macro
+    let (tx, rx) = crossbeam_channel::unbounded::<UiEvent>();
+    let input = thread::spawn(move || -> Result<()> { input_thread(tx) });
+    let ui = thread::spawn(move || -> Result<()> { ui_thread(rx) });
 
-pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
-    // HACK: XDG_DESKTOP_PORTALS is showing some sort of error that is throwing everything off
-    thread::sleep(Duration::from_millis(300));
+    Ok((input, ui))
+}
 
+fn input_thread(tx: Sender<UiEvent>) -> Result<()> {
+    loop {
+        match read()? {
+            Event::Key(event) => match event.code {
+                KeyCode::Esc | KeyCode::Char('q') => break,
+                _ => (),
+            },
+            Event::Mouse(event) => debug!("{:?}", event),
+            Event::Resize(width, height) => tx.send(UiEvent::Resize(width, height))?,
+        }
+    }
+
+    Ok(())
+}
+
+fn ui_thread(rx: Receiver<UiEvent>) -> Result<()> {
+    // Prepare terminal
     enable_raw_mode()?;
-    // Set up terminal
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // Draw stuff!
-    // TODO: Send a signal to this thread to update the UI when adapter state changes
     terminal.draw(|f| {
         let size = f.size();
         let block = Block::default().title("Variables").borders(Borders::ALL);
         f.render_widget(block, size);
     })?;
-    thread::sleep(Duration::from_millis(5000));
+
+    for msg in rx {
+        match msg {
+            UiEvent::Resize(_, _) => terminal.draw(|f| {
+                let size = f.size();
+                let block = Block::default().title("Variables").borders(Borders::ALL);
+                f.render_widget(block, size);
+            })?,
+        };
+    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -43,4 +70,8 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     terminal.show_cursor()?;
 
     Ok(())
+}
+
+enum UiEvent {
+    Resize(u16, u16),
 }

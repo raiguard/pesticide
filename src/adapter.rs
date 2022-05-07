@@ -5,6 +5,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub struct Adapter {
@@ -25,8 +26,10 @@ pub struct Adapter {
     next_seq: u32,
 }
 
+pub type WrappedAdapter = Arc<Mutex<Adapter>>;
+
 impl Adapter {
-    pub fn new(config: Config) -> Result<Self> {
+    pub fn new(config: Config) -> Result<WrappedAdapter> {
         // Start debug adapter process
         let mut child = Command::new(&config.adapter)
             .args(&config.adapter_args)
@@ -58,7 +61,7 @@ impl Adapter {
 
         let stdin = BufWriter::new(child.stdin.take().context("Failed to open stdin")?);
 
-        Ok(Self {
+        Ok(Arc::new(Mutex::new(Self {
             child,
             config,
             rx: out_rx,
@@ -73,7 +76,7 @@ impl Adapter {
 
             stdin,
             next_seq: 0,
-        })
+        })))
     }
 
     pub fn next_seq(&mut self) -> u32 {

@@ -14,7 +14,6 @@ use pico_args::Arguments;
 use simplelog::{Config as SLConfig, LevelFilter, WriteLogger};
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 fn main() -> Result<()> {
     // Parse CLI arguments
@@ -48,7 +47,7 @@ fn main() -> Result<()> {
     let config = Config::new(cli).context("Invalid configuration file")?;
 
     // Initialize adapter
-    let adapter = Arc::new(Mutex::new(Adapter::new(config)?));
+    let adapter = Adapter::new(config)?;
 
     // Start debugging session
     controller::start(adapter)?;

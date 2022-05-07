@@ -1,12 +1,12 @@
 use crate::adapter::Adapter;
+use crate::adapter::WrappedAdapter;
 use crate::dap_types::*;
 use crate::ui;
 use anyhow::Result;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
 use std::thread;
 
-pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
+pub fn start(adapter: WrappedAdapter) -> Result<()> {
     // Handle incoming messages
     let event_adapter = adapter.clone();
     let event_loop = thread::spawn(move || -> Result<()> {
@@ -23,8 +23,7 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     });
 
     // TUI
-    let tui_adapter = adapter.clone();
-    let tui_loop = thread::spawn(move || -> Result<()> { ui::start(tui_adapter) });
+    let (input, ui) = ui::start()?;
 
     // Send initialize request
     let mut adapter = adapter.lock().unwrap();
@@ -49,7 +48,8 @@ pub fn start(adapter: Arc<Mutex<Adapter>>) -> Result<()> {
     drop(adapter);
 
     event_loop.join().unwrap()?;
-    tui_loop.join().unwrap()?;
+    input.join().unwrap()?;
+    ui.join().unwrap()?;
 
     Ok(())
 }
