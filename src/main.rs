@@ -9,6 +9,7 @@ extern crate log;
 
 use crate::adapter::Adapter;
 use crate::config::Config;
+use crate::ui::Ui;
 use anyhow::{anyhow, Context, Result};
 use pico_args::Arguments;
 use simplelog::{Config as SLConfig, LevelFilter, WriteLogger};
@@ -45,6 +46,11 @@ fn main() -> Result<()> {
 
     // Retrieve local configuration
     let config = Config::new(cli).context("Invalid configuration file")?;
+
+    // TODO: Decide to daemonize into a server, send a command to the server, or become a client
+
+    // Initialize UI
+    let ui = Ui::new()?;
 
     // Initialize adapter
     let adapter = Adapter::new(config)?;

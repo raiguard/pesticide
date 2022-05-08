@@ -5,160 +5,127 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use std::thread::{self, JoinHandle};
+use std::io::Stdout;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use tui::backend::CrosstermBackend;
 use tui::style::Color;
 use tui::style::Style;
-use tui::widgets::{Block, Borders, List, ListItem, ListState};
+use tui::widgets::{Block, Borders, List};
 use tui::Terminal;
 
-pub fn start() -> Result<(JoinHandle<Result<()>>, JoinHandle<Result<()>>)> {
-    // Handle input events on a separate thread to remove the need for a
-    // timeout and allow use of the select! macro
-    let (tx, rx) = crossbeam_channel::unbounded::<UiEvent>();
-    let input = thread::spawn(move || -> Result<()> { input_thread(tx) });
-    let ui = thread::spawn(move || -> Result<()> { ui_thread(rx) });
+pub struct Ui {
+    pub tx: Sender<UiEvent>,
 
-    Ok((input, ui))
+    state: UiState,
+    terminal: Terminal<CrosstermBackend<Stdout>>,
 }
 
-fn input_thread(tx: Sender<UiEvent>) -> Result<()> {
-    loop {
-        match read()? {
-            Event::Key(event) => match event.code {
-                KeyCode::Esc | KeyCode::Char('q') => break,
-                KeyCode::Char('j') => tx.send(UiEvent::NextItem)?,
-                KeyCode::Char('k') => tx.send(UiEvent::PrevItem)?,
-                _ => (),
-            },
-            Event::Mouse(event) => debug!("{:?}", event),
-            Event::Resize(width, height) => tx.send(UiEvent::Resize(width, height))?,
-        }
+pub type WrappedUi = Arc<Mutex<Ui>>;
+
+impl Ui {
+    pub fn new() -> Result<WrappedUi> {
+        // Prepare terminal
+        enable_raw_mode()?;
+        let mut stdout = std::io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Terminal::new(backend)?;
+
+        let (tx, rx) = crossbeam_channel::unbounded();
+
+        let ui = Arc::new(Mutex::new(Self {
+            tx,
+
+            state: UiState::default(),
+            terminal,
+        }));
+
+        handle_input(ui.clone());
+        handle_ui(ui.clone(), rx);
+
+        Ok(ui)
     }
 
-    Ok(())
-}
+    pub fn quit(&mut self) -> Result<()> {
+        // Restore terminal
+        disable_raw_mode()?;
+        execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        self.terminal.show_cursor()?;
 
-fn ui_thread(rx: Receiver<UiEvent>) -> Result<()> {
-    // Prepare terminal
-    enable_raw_mode()?;
-    let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // Draw stuff!
-    terminal.draw(|f| {
-        let size = f.size();
-        let block = Block::default().title("Variables").borders(Borders::ALL);
-        f.render_widget(block, size);
-    })?;
-
-    let mut variables = Variables::new(vec![
-        String::from("Var 1"),
-        String::from("Var 2"),
-        String::from("Var 3"),
-        String::from("Var 4"),
-        String::from("Var 5"),
-        String::from("Var 6"),
-    ]);
-    variables.state.select(Some(0));
-
-    for msg in rx {
-        match msg {
-            UiEvent::Resize(_, _) => (),
-            UiEvent::NextItem => variables.next(),
-            UiEvent::PrevItem => variables.previous(),
-        };
-
-        terminal.draw(|f| {
-            let items: Vec<ListItem> = variables
-                .list
-                .iter()
-                .map(|i| ListItem::new(i.as_str()).style(Style::default().fg(Color::Magenta)))
-                .collect();
-            let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title("Variables"))
-                .highlight_style(Style::default().fg(Color::Cyan));
-
-            let size = f.size();
-            f.render_stateful_widget(list, size, &mut variables.state);
-        })?;
+        Ok(())
     }
-
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    Ok(())
 }
 
-enum UiEvent {
+impl Drop for Ui {
+    fn drop(&mut self) {
+        self.quit().unwrap();
+    }
+}
+
+#[derive(Default)]
+struct UiState {}
+
+pub enum UiEvent {
     Resize(u16, u16),
     NextItem,
     PrevItem,
+    Quit,
 }
 
-struct Variables {
-    list: Vec<String>,
-    state: ListState,
-}
-
-impl Variables {
-    fn new(list: Vec<String>) -> Self {
-        Self {
-            list,
-            state: ListState::default(),
+fn handle_input(ui: WrappedUi) {
+    thread::spawn(move || -> Result<()> {
+        loop {
+            let msg = read()?;
+            let ui = ui.lock().unwrap();
+            match msg {
+                Event::Key(event) => match event.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        ui.tx.send(UiEvent::Quit)?;
+                        break;
+                    }
+                    KeyCode::Char('j') => ui.tx.send(UiEvent::NextItem)?,
+                    KeyCode::Char('k') => ui.tx.send(UiEvent::PrevItem)?,
+                    _ => (),
+                },
+                Event::Mouse(event) => debug!("{:?}", event),
+                Event::Resize(width, height) => ui.tx.send(UiEvent::Resize(width, height))?,
+            }
         }
-    }
 
-    pub fn set_items(&mut self, list: Vec<String>) {
-        self.list = list;
-        // We reset the state as the associated list have changed. This effectively reset
-        // the selection as well as the stored offset.
-        self.state = ListState::default();
-    }
+        Ok(())
+    });
+}
 
-    // Select the next item. This will not be reflected until the widget is drawn in the
-    // `Terminal::draw` callback using `Frame::render_stateful_widget`.
-    pub fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.list.len() - 1 {
-                    0
-                } else {
-                    i + 1
+fn handle_ui(ui: WrappedUi, rx: Receiver<UiEvent>) {
+    thread::spawn(move || -> Result<()> {
+        for msg in rx {
+            let mut ui = ui.lock().unwrap();
+
+            match msg {
+                UiEvent::Resize(_, _) => (),
+                UiEvent::NextItem => (),
+                UiEvent::PrevItem => (),
+                UiEvent::Quit => {
+                    ui.quit()?;
+                    break;
                 }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
+            };
 
-    // Select the previous item. This will not be reflected until the widget is drawn in the
-    // `Terminal::draw` callback using `Frame::render_stateful_widget`.
-    pub fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.list.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
+            ui.terminal.draw(|f| {
+                let list = List::new(vec![])
+                    .block(Block::default().borders(Borders::ALL).title("Variables"))
+                    .highlight_style(Style::default().fg(Color::Cyan));
 
-    // Unselect the currently selected item if any. The implementation of `ListState` makes
-    // sure that the stored offset is also reset.
-    pub fn unselect(&mut self) {
-        self.state.select(None);
-    }
+                let size = f.size();
+                f.render_widget(list, size);
+            })?;
+        }
+
+        Ok(())
+    });
 }

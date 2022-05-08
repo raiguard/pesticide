@@ -5,7 +5,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 pub struct Adapter {
@@ -183,4 +183,8 @@ fn reader_loop(mut reader: impl BufRead, tx: Sender<AdapterMessage>) -> Result<(
             Err(e) => error!("[ADAPTER RX] {}", e),
         }
     }
+}
+
+pub fn clone_rx(adapter: &WrappedAdapter) -> Result<Receiver<AdapterMessage>> {
+    Ok(adapter.lock().unwrap().rx.clone())
 }

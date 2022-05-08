@@ -22,9 +22,6 @@ pub fn start(adapter: WrappedAdapter) -> Result<()> {
         Ok(())
     });
 
-    // TUI
-    let (input, ui) = ui::start()?;
-
     // Send initialize request
     let mut adapter = adapter.lock().unwrap();
     let adapter_id = adapter.config.adapter_id.clone();
@@ -48,8 +45,6 @@ pub fn start(adapter: WrappedAdapter) -> Result<()> {
     drop(adapter);
 
     event_loop.join().unwrap()?;
-    input.join().unwrap()?;
-    ui.join().unwrap()?;
 
     Ok(())
 }
