@@ -9,9 +9,7 @@ use std::io::Stdout;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tui::backend::CrosstermBackend;
-use tui::style::Color;
-use tui::style::Style;
-use tui::widgets::{Block, Borders, List};
+use tui::widgets;
 use tui::Terminal;
 
 pub struct Ui {
@@ -68,13 +66,17 @@ impl Drop for Ui {
 }
 
 #[derive(Default)]
-struct UiState {}
+struct UiState {
+    stopped: bool,
+}
 
 pub enum UiEvent {
-    Resize(u16, u16),
+    Continued,
     NextItem,
     PrevItem,
     Quit,
+    Resize(u16, u16),
+    Stopped,
 }
 
 fn handle_input(ui: WrappedUi) {
@@ -114,15 +116,18 @@ fn handle_ui(ui: WrappedUi, rx: Receiver<UiEvent>) {
                     ui.quit()?;
                     break;
                 }
+                UiEvent::Stopped => ui.state.stopped = true,
+                UiEvent::Continued => ui.state.stopped = false,
             };
 
-            ui.terminal.draw(|f| {
-                let list = List::new(vec![])
-                    .block(Block::default().borders(Borders::ALL).title("Variables"))
-                    .highlight_style(Style::default().fg(Color::Cyan));
+            // FIXME: Terminal and UiState need to be separate things to avoid borrow checker silliness
+            let stopped = ui.state.stopped;
 
+            ui.terminal.draw(|f| {
+                let block =
+                    widgets::Block::default().title(if stopped { "Stopped" } else { "Running" });
                 let size = f.size();
-                f.render_widget(list, size);
+                f.render_widget(block, size);
             })?;
         }
 

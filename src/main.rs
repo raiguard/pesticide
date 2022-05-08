@@ -56,7 +56,7 @@ fn main() -> Result<()> {
     let adapter = Adapter::new(config)?;
 
     // Start debugging session
-    controller::start(adapter)?;
+    controller::start(adapter, ui)?;
 
     Ok(())
 }

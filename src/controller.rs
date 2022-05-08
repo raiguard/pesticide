@@ -1,20 +1,24 @@
 use crate::adapter::Adapter;
 use crate::adapter::WrappedAdapter;
 use crate::dap_types::*;
-use crate::ui;
+use crate::ui::Ui;
+use crate::ui::UiEvent;
+use crate::ui::WrappedUi;
 use anyhow::Result;
 use std::process::Command;
 use std::thread;
 
-pub fn start(adapter: WrappedAdapter) -> Result<()> {
+pub fn start(adapter: WrappedAdapter, ui: WrappedUi) -> Result<()> {
     // Handle incoming messages
     let event_adapter = adapter.clone();
+    let event_ui = ui.clone();
     let event_loop = thread::spawn(move || -> Result<()> {
         let rx = event_adapter.lock().unwrap().rx.clone();
         for msg in rx {
             let mut adapter = event_adapter.lock().unwrap();
+            let mut ui = ui.lock().unwrap();
             match msg {
-                AdapterMessage::Event(event) => handle_event(&mut adapter, event)?,
+                AdapterMessage::Event(event) => handle_event(&mut adapter, &mut ui, event)?,
                 AdapterMessage::Request(req) => handle_request(&mut adapter, req)?,
                 AdapterMessage::Response(res) => handle_response(&mut adapter, res)?,
             }
@@ -57,12 +61,13 @@ fn handle_exited(adapter: &mut Adapter) {
     // Pesticide will exit due to the debug adapter pipe closing
 }
 
-fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
+fn handle_event(adapter: &mut Adapter, ui: &mut Ui, payload: EventPayload) -> Result<()> {
     adapter.update_seq(payload.seq);
 
     match payload.event {
         Event::Continued(_) => {
             info!("Continuing");
+            ui.tx.send(UiEvent::Continued)?;
         }
         Event::Exited(_) => handle_exited(adapter),
         Event::Module(_) => (), // TODO:
@@ -81,6 +86,9 @@ fn handle_event(adapter: &mut Adapter, payload: EventPayload) -> Result<()> {
 
             // Request threads
             adapter.send_request(Request::Threads)?;
+
+            // Inform the user (temporary)
+            ui.tx.send(UiEvent::Stopped)?;
         }
         Event::Thread(event) => {
             info!("New thread started: {}", event.thread_id);
