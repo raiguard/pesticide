@@ -17,12 +17,25 @@
 // Send updated events to clients
 // Clients request the data they need
 // TUI
+//
+// SERVER ARCHITECTURE:
+// - Dedicated task to read and write the data structures
+// - A separate task for each client that uses channels to send and receive data from the data task
+// - Separate task to listen to server stdout, or use select! in the management task?
+// - Each client task will need to be able to send events to the client when the state updates without user input
+//
+// CLIENT ARCHITECTURE:
+// - Dedicated task to manage I/O with the server
+// - select! over client TUI or CLI inputs, and messages received from the server
+// - separate tasks for rendering the UI and accepting user input
 
 use anyhow::Result;
 use pico_args::Arguments;
+use std::path::PathBuf;
 use std::{thread, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::select;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -51,53 +64,11 @@ async fn main() -> Result<()> {
         tokio::fs::create_dir_all(&runtime_dir).await?;
     }
     let socket_path = runtime_dir.join(format!("{}.sock", cli.session.as_ref().unwrap_or(&pid)));
-    println!("{:?}", socket_path);
 
     match cli.run_type {
-        // RunType::Client if cli.session.is_none() => {
-        //     // Fork server to background, then run client
-        //     println!("Client-server mode");
-        // }
-        RunType::Client => {
-            let stream = UnixStream::connect(socket_path).await?;
-            let (rd, mut wr) = tokio::io::split(stream);
-            let mut rd = BufReader::new(rd);
-
-            for _ in 1..10 {
-                wr.write_all(b"Hello world!\n").await?;
-                let mut msg = String::new();
-                rd.read_line(&mut msg).await?;
-                println!("{}", msg.trim());
-                thread::sleep(Duration::from_secs(1));
-            }
-        }
-        RunType::Server => {
-            let listener = UnixListener::bind(socket_path)?;
-
-            loop {
-                let (stream, addr) = listener.accept().await?;
-                println!("New client: {:?}", addr);
-                let (rd, mut wr) = tokio::io::split(stream);
-                let mut buf = BufReader::new(rd);
-
-                tokio::spawn(async move {
-                    loop {
-                        let mut msg = String::new();
-                        match buf.read_line(&mut msg).await {
-                            Ok(0) => break, // Client disconnected
-                            Ok(_) => {
-                                println!("{}", msg.trim());
-                                wr.write_all(b"RECEIVEWD\n").await.unwrap();
-                            }
-                            Err(_) => (), // TODO:
-                        };
-                    }
-                });
-            }
-        }
+        RunType::Client => run_client(socket_path).await,
+        RunType::Server => run_server(socket_path).await,
     }
-
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -119,3 +90,89 @@ options:
     --server          Start a headless session
     --session <NAME>  Set a session name (default: PID)
 ";
+
+async fn run_client(socket_path: PathBuf) -> Result<()> {
+    // Server message handling task
+    let (server_out_tx, mut server_out_rx) = tokio::sync::mpsc::channel::<String>(32);
+    let (server_in_tx, mut server_in_rx) = tokio::sync::broadcast::channel::<String>(32);
+    tokio::spawn(async move {
+        let server = UnixStream::connect(socket_path).await.unwrap();
+        let (server_rd, mut server_wr) = tokio::io::split(server);
+        let mut server_rd = BufReader::new(server_rd);
+        let mut read_buf = String::new();
+
+        loop {
+            select! {
+                res = server_out_rx.recv() => {
+                    match res {
+                        Some(msg) => {
+                            println!("TO SERVER: {}", msg.trim());
+                            server_wr.write_all(msg.as_bytes()).await.unwrap();
+                        },
+                        None => break,
+
+                    };
+                }
+                res = server_rd.read_line(&mut read_buf) => {
+                    match res {
+                        Ok(0) => {
+                            println!("Server disconnected");
+                            break
+                        },
+                        Ok(_) => {
+                            let msg = read_buf.trim();
+                            println!("FROM SERVER: {}", msg);
+                            server_in_tx.send(msg.to_string()).unwrap();
+                        },
+                        Err(e) => eprintln!("{}", e),
+                    };
+                    read_buf.clear();
+                }
+            }
+        }
+    });
+
+    // Receive messages from the server
+    tokio::spawn(async move {
+        loop {
+            let msg = server_in_rx.recv().await.unwrap();
+            println!("RECEIVED FROM MANAGER: {}", msg);
+        }
+    });
+
+    // Send dummy messages to server
+    for i in 1..5 {
+        server_out_tx.send(format!("Hello, world {}!\n", i)).await?;
+        thread::sleep(Duration::from_secs(1));
+    }
+
+    Ok(())
+}
+
+async fn run_server(socket_path: PathBuf) -> Result<()> {
+    let listener = UnixListener::bind(socket_path)?;
+
+    loop {
+        let (stream, addr) = listener.accept().await?;
+        println!("NEW CLIENT: {:?}", addr);
+        let (rd, mut wr) = tokio::io::split(stream);
+        let mut buf = BufReader::new(rd);
+
+        tokio::spawn(async move {
+            loop {
+                let mut msg = String::new();
+                match buf.read_line(&mut msg).await {
+                    Ok(0) => {
+                        println!("Client disconnected");
+                        break;
+                    } // Client disconnected
+                    Ok(_) => {
+                        println!("FROM CLIENT: {}", msg.trim());
+                        wr.write_all(msg.as_bytes()).await.unwrap();
+                    }
+                    Err(_) => (), // TODO:
+                };
+            }
+        });
+    }
+}

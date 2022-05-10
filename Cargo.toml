@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
-crossbeam-channel = "0.5.4"
 crossterm = "0.23.2"
 daemonize = "0.4.1"
 dirs = "4.0.0"
@@ -27,3 +26,5 @@ codegen-units = 1
 lto = true
 opt-level = "z"
 strip = true
+
+[features]
