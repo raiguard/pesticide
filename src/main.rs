@@ -1,75 +1,121 @@
-mod adapter;
-mod config;
-mod controller;
-mod dap_types;
-mod ui;
+// LOGIC:
+// Each debug session has one server and N clients
+// Each session has a socket in $XDG_RUNTIME_DIR/pesticide, keyed by session name
+// The session name is either provided as a CLI flag or is set to the PID
+// Daemon mode will start a server without starting any clients
+// Kakoune mode will start a client that is connected to the Kakoune session instead of being a standard client
+// Regular clients can take arguments to specify how their UI is configured
+// Request mode will construct a client, send a single request, then quit
+// The server will manage a log in $HOME/.local/share/pesticide/[session].log
+// Clients will send their log messages to the server so they all get written to the same file
+// Socket messages will use something similar to the DAP - a content length header, then the data as JSON
+//
+// IMPLEMENTATION:
+// Construct a server and client, and pass simple data back and forth
+// Send log messages to server to have a single log file
+// Connect existing adapter logic to the server
+// Send updated events to clients
+// Clients request the data they need
+// TUI
 
-#[macro_use]
-extern crate log;
-
-use crate::adapter::Adapter;
-use crate::config::Config;
-use crate::ui::Ui;
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use pico_args::Arguments;
-use simplelog::{Config as SLConfig, LevelFilter, WriteLogger};
-use std::fs::File;
-use std::path::PathBuf;
+use std::{thread, time::Duration};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{UnixListener, UnixStream};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Parse CLI arguments
     let mut args = Arguments::from_env();
     if args.contains("--help") {
         println!("{}", HELP);
         return Ok(());
     }
-    let cli = Cli {
-        config: args.opt_value_from_str("--config")?,
-        log: args.opt_value_from_str("--log")?,
-    };
-
-    // Initialize logging
-    let path = if let Some(path) = &cli.log {
-        path.clone()
+    let run_type = if args.contains("--server") {
+        RunType::Server
     } else {
-        let data_dir = dirs::data_dir()
-            .ok_or_else(|| anyhow!("Could not resolve OS data directory"))?
-            .join("pesticide");
-        if !data_dir.exists() {
-            std::fs::create_dir(data_dir.clone())?;
-        }
-        data_dir.join("pesticide.log")
+        RunType::Client
     };
-    WriteLogger::init(LevelFilter::Trace, SLConfig::default(), File::create(path)?)?;
+    let cli = Cli {
+        session: args.opt_value_from_str("--session")?,
+        run_type,
+    };
 
-    debug!("{:?}", cli);
+    // Get socket path
+    let pid = std::process::id().to_string();
+    let runtime_dir = dirs::runtime_dir()
+        .expect("Could not get runtime directory")
+        .join("pesticide");
+    if !runtime_dir.exists() {
+        tokio::fs::create_dir_all(&runtime_dir).await?;
+    }
+    let socket_path = runtime_dir.join(format!("{}.sock", cli.session.as_ref().unwrap_or(&pid)));
+    println!("{:?}", socket_path);
 
-    // Retrieve local configuration
-    let config = Config::new(cli).context("Invalid configuration file")?;
+    match cli.run_type {
+        // RunType::Client if cli.session.is_none() => {
+        //     // Fork server to background, then run client
+        //     println!("Client-server mode");
+        // }
+        RunType::Client => {
+            let stream = UnixStream::connect(socket_path).await?;
+            let (rd, mut wr) = tokio::io::split(stream);
+            let mut rd = BufReader::new(rd);
 
-    // TODO: Decide to daemonize into a server, send a command to the server, or become a client
+            for _ in 1..10 {
+                wr.write_all(b"Hello world!\n").await?;
+                let mut msg = String::new();
+                rd.read_line(&mut msg).await?;
+                println!("{}", msg.trim());
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
+        RunType::Server => {
+            let listener = UnixListener::bind(socket_path)?;
 
-    // Initialize UI
-    let ui = Ui::new()?;
+            loop {
+                let (stream, addr) = listener.accept().await?;
+                println!("New client: {:?}", addr);
+                let (rd, mut wr) = tokio::io::split(stream);
+                let mut buf = BufReader::new(rd);
 
-    // Initialize adapter
-    let adapter = Adapter::new(config)?;
-
-    // Start debugging session
-    controller::start(adapter, ui)?;
+                tokio::spawn(async move {
+                    loop {
+                        let mut msg = String::new();
+                        match buf.read_line(&mut msg).await {
+                            Ok(0) => break, // Client disconnected
+                            Ok(_) => {
+                                println!("{}", msg.trim());
+                                wr.write_all(b"RECEIVEWD\n").await.unwrap();
+                            }
+                            Err(_) => (), // TODO:
+                        };
+                    }
+                });
+            }
+        }
+    }
 
     Ok(())
 }
 
 #[derive(Debug)]
 pub struct Cli {
-    config: Option<PathBuf>,
-    log: Option<PathBuf>,
+    run_type: RunType,
+    session: Option<String>,
+}
+
+#[derive(Debug)]
+enum RunType {
+    Client,
+    Server,
 }
 
 const HELP: &str = "\
 usage: pesticide [options]
 options:
-    --config <PATH>  Path to the pesticide.toml file (defaults to $PWD/pesticide.toml)
-    --help           Print help information
-    --log <PATH>     Write log to the given file (defaults to $HOME/.local/share/pesticide/pesticide.log)";
+    --help            Print help information
+    --server          Start a headless session
+    --session <NAME>  Set a session name (default: PID)
+";
