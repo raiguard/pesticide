@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::Cli;
 use anyhow::{bail, Context, Result};
 use regex::{Captures, Regex};
@@ -14,14 +16,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(cli: Cli) -> Result<Self> {
-        // Resolve path
-        let path = if let Some(config) = cli.config {
-            config
-        } else {
-            std::env::current_dir()?.join("pesticide.toml")
-        };
-
+    pub fn new(path: PathBuf) -> Result<Self> {
         // Get contents and expand environment variables
         let mut contents =
             std::fs::read_to_string(path).context("Failed to read configuration file")?;
@@ -36,7 +31,7 @@ impl Config {
         // Create config object
         let config: Config =
             toml::from_str(&contents).context("Failed to parse configuration file")?;
-        debug!("{:?}", config);
+        // debug!("{:?}", config);
 
         if config.term_cmd.is_empty() {
             bail!("term_cmd may not be empty");

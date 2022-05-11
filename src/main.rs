@@ -29,13 +29,28 @@
 // - select! over client TUI or CLI inputs, and messages received from the server
 // - separate tasks for rendering the UI and accepting user input
 
+mod adapter;
+mod config;
+mod dap_codec;
+mod dap_types;
+
+#[macro_use]
+extern crate log;
+
+use adapter::Adapter;
 use anyhow::Result;
+use config::Config;
+use dap_types::*;
 use pico_args::Arguments;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{thread, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::SocketAddr;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::select;
+use tokio::sync::{mpsc, Mutex};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -51,9 +66,20 @@ async fn main() -> Result<()> {
         RunType::Client
     };
     let cli = Cli {
+        config: args
+            .opt_value_from_str("--config")?
+            .unwrap_or_else(|| std::env::current_dir().unwrap().join("pesticide.toml")),
         session: args.opt_value_from_str("--session")?,
         run_type,
     };
+
+    // Initialize logging
+    simplelog::TermLogger::init(
+        log::LevelFilter::Trace,
+        simplelog::Config::default(),
+        simplelog::TerminalMode::Mixed,
+        simplelog::ColorChoice::Auto,
+    )?;
 
     // Get socket path
     let pid = std::process::id().to_string();
@@ -65,14 +91,16 @@ async fn main() -> Result<()> {
     }
     let socket_path = runtime_dir.join(format!("{}.sock", cli.session.as_ref().unwrap_or(&pid)));
 
+    // Run
     match cli.run_type {
         RunType::Client => run_client(socket_path).await,
-        RunType::Server => run_server(socket_path).await,
+        RunType::Server => run_server(socket_path, cli.config).await,
     }
 }
 
 #[derive(Debug)]
 pub struct Cli {
+    config: PathBuf,
     run_type: RunType,
     session: Option<String>,
 }
@@ -86,6 +114,7 @@ enum RunType {
 const HELP: &str = "\
 usage: pesticide [options]
 options:
+    --config          Debugger configuration file (default: $PWD/pesticide.toml)
     --help            Print help information
     --server          Start a headless session
     --session <NAME>  Set a session name (default: PID)
@@ -93,7 +122,7 @@ options:
 
 async fn run_client(socket_path: PathBuf) -> Result<()> {
     // Server message handling task
-    let (server_out_tx, mut server_out_rx) = tokio::sync::mpsc::channel::<String>(32);
+    let (to_server_tx, mut to_server_rx) = tokio::sync::mpsc::channel::<String>(32);
     let (server_in_tx, mut server_in_rx) = tokio::sync::broadcast::channel::<String>(32);
     tokio::spawn(async move {
         let server = UnixStream::connect(socket_path).await.unwrap();
@@ -103,7 +132,7 @@ async fn run_client(socket_path: PathBuf) -> Result<()> {
 
         loop {
             select! {
-                res = server_out_rx.recv() => {
+                res = to_server_rx.recv() => {
                     match res {
                         Some(msg) => {
                             println!("TO SERVER: {}", msg.trim());
@@ -142,16 +171,44 @@ async fn run_client(socket_path: PathBuf) -> Result<()> {
 
     // Send dummy messages to server
     for i in 1..5 {
-        server_out_tx.send(format!("Hello, world {}!\n", i)).await?;
+        to_server_tx.send(format!("Hello, world {}!\n", i)).await?;
         thread::sleep(Duration::from_secs(1));
     }
 
     Ok(())
 }
 
-async fn run_server(socket_path: PathBuf) -> Result<()> {
-    let listener = UnixListener::bind(socket_path)?;
+async fn run_server(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
+    // Spin up debug adapter
+    let config = Config::new(config_path)?;
+    let mut adapter = Adapter::new(config)?;
 
+    let state = Arc::new(Mutex::new(State::new()));
+
+    // Manage adapter comms
+    tokio::spawn(async move {
+        loop {
+            select! {
+                res = adapter.read() => {
+                    match res {
+                        Ok(Some(msg)) => {
+                            // match msg {
+                            //     AdapterMessage::Event(event) => handle_event(&mut adapter, &mut ui, event).unwrap(),
+                            //     AdapterMessage::Request(req) => handle_request(&mut adapter, req).unwrap(),
+                            //     AdapterMessage::Response(res) => handle_response(&mut adapter, res).unwrap(),
+                            // };
+                            debug!("HANDLE MESSAGE FROM ADAPTER");
+                        }
+                        Ok(None) => break,
+                        Err(e) => error!("{}", e)
+                    }
+                }
+            }
+        }
+    });
+
+    // Listen for and connect to clients
+    let listener = UnixListener::bind(socket_path)?;
     loop {
         let (stream, addr) = listener.accept().await?;
         println!("NEW CLIENT: {:?}", addr);
@@ -168,11 +225,48 @@ async fn run_server(socket_path: PathBuf) -> Result<()> {
                     } // Client disconnected
                     Ok(_) => {
                         println!("FROM CLIENT: {}", msg.trim());
-                        wr.write_all(msg.as_bytes()).await.unwrap();
                     }
                     Err(_) => (), // TODO:
                 };
             }
         });
+    }
+}
+
+struct State {
+    /// Send messages to clients
+    clients: HashMap<u32, mpsc::Sender<String>>,
+    next_client: u32,
+
+    // Debug session state
+    threads: Vec<Thread>,
+}
+
+impl State {
+    pub fn new() -> Self {
+        Self {
+            clients: HashMap::new(),
+            next_client: 0,
+            threads: vec![],
+        }
+    }
+}
+
+struct Client {
+    rx: mpsc::Receiver<String>,
+    stream: UnixStream,
+}
+
+impl Client {
+    pub async fn new(state: Arc<Mutex<State>>, stream: UnixStream) -> Result<Self> {
+        // Create a channel for this client
+        let (tx, rx) = mpsc::channel(32);
+
+        let mut state = state.lock().await;
+        let client_id = state.next_client;
+        state.next_client += 1;
+        state.clients.insert(client_id, tx);
+
+        Ok(Self { rx, stream })
     }
 }
