@@ -8,6 +8,6 @@ term_cmd = ["kitty", "--"]
 program = "${PWD}/test.py"
 args = []
 stopOnEntry = true
-console = "externalTerminal"
+console = "integratedTerminal"
 debugOptions = []
 cwd = "${PWD}"

@@ -106,7 +106,6 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                         info!("Debug adapter shut down, ending session");
                         // TODO: Clean up sockets and other things
                         state.broadcast("quit".to_string()).await?;
-                        break
                     },
                     Err(e) => error!("{}", e)
                 }
@@ -127,7 +126,6 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                         info!("Received quit request, shutting down...");
                         adapter.quit().await?;
                         state.broadcast("quit".to_string()).await?;
-                        break
                     }
                     _ => ()
                 }
@@ -252,12 +250,16 @@ async fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Resul
 
     // The only "reverse request" in the DAP is RunInTerminal
     if let Request::RunInTerminal(mut req) = payload.request {
-        let mut term_cmd = adapter.config.term_cmd.clone();
-        term_cmd.append(&mut req.args);
+        let cmd = match req.kind {
+            RunInTerminalKind::External => {
+                let mut term_cmd = adapter.config.term_cmd.clone();
+                term_cmd.append(&mut req.args);
+                term_cmd
+            }
+            RunInTerminalKind::Integrated => req.args,
+        };
 
-        let cmd = Command::new(term_cmd[0].clone())
-            .args(term_cmd[1..].to_vec())
-            .spawn();
+        let cmd = Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn();
 
         let (success, message) = match &cmd {
             Ok(_) => (true, None),
