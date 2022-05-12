@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use crate::Cli;
 use anyhow::{bail, Context, Result};
 use regex::{Captures, Regex};
 use serde::Deserialize;

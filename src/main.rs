@@ -34,7 +34,6 @@
 mod adapter;
 mod client;
 mod config;
-mod dap_codec;
 mod dap_types;
 mod server;
 
