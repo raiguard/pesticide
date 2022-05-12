@@ -3,7 +3,6 @@ use crate::dap_types::*;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
@@ -11,11 +10,9 @@ pub struct Adapter {
     pub child: Child,
     pub config: Config,
 
-    // pub capabilities: Option<Capabilities>,
-    // pub threads: HashMap<u32, Thread>,
-    // pub stack_frames: HashMap<u32, Vec<StackFrame>>,
-    // pub scopes: HashMap<u32, Vec<Scope>>,
-    // pub variables: HashMap<u32, Vec<Variable>>,
+    /// Capabilities defined by the adapter
+    /// TODO: Wait to construct adapter object until after this is retrieved?
+    pub capabilities: Option<Capabilities>,
     /// Responses from the debug adapter will use the seq as an identifier
     requests: HashMap<u32, Request>,
 
@@ -61,6 +58,7 @@ impl Adapter {
             config,
 
             requests: HashMap::new(),
+            capabilities: None,
 
             stdin,
             stdout,
@@ -149,6 +147,12 @@ impl Adapter {
         }
     }
 
+    pub fn update_seq(&mut self, new_seq: u32) {
+        if new_seq >= self.next_seq {
+            self.next_seq = new_seq + 1
+        }
+    }
+
     async fn write(&mut self, msg: String) -> Result<()> {
         debug!("[DEBUG ADAPTER] << {}", msg);
         self.stdin
@@ -163,11 +167,5 @@ impl Adapter {
         let seq = self.next_seq;
         self.next_seq += 1;
         seq
-    }
-
-    fn update_seq(&mut self, new_seq: u32) {
-        if new_seq >= self.next_seq {
-            self.next_seq = new_seq + 1
-        }
     }
 }
