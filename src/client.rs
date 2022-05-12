@@ -24,6 +24,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
             msg = socket.next() => {
                 match msg {
                     Some(Ok(msg)) => {
+                        debug!("FROM SERVER: {msg}");
                         #[allow(clippy::single_match)]
                         match msg.as_str() {
                             "quit" => break,
