@@ -66,6 +66,10 @@ impl Adapter {
         })
     }
 
+    pub async fn quit(&mut self) -> Result<(), std::io::Error> {
+        self.child.kill().await
+    }
+
     pub async fn send_request(&mut self, request: Request) -> Result<()> {
         let seq = self.next_seq();
 

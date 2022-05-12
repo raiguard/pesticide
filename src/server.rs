@@ -56,16 +56,21 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
     let (client_tx, mut client_rx) = mpsc::channel::<String>(32);
 
     // Main loop - act on async messages
+    trace!("Start of main loop");
     loop {
+        trace!("Main looped");
         select! {
             // New client connections
             Ok((stream, addr)) = socket.accept() => {
                 trace!("NEW CLIENT: {:?}", addr);
-                let tx = client_tx.clone();
+                let client_tx = client_tx.clone();
                 let stream = Framed::new(stream, LinesCodec::new());
                 let mut client = Client::new(&mut state, stream).await.unwrap();
 
                 // Spawn worker thread
+                // This worker thread simply acts as a validating middleman.
+                // We are only going to have a handful of clients per session,
+                // so it's fine to do all processing on the same thread.
                 tokio::spawn(async move {
                     loop {
                         select! {
@@ -73,10 +78,7 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                             Some(line) = client.stream.next() => match line {
                                 Ok(msg) => {
                                     // TODO: Decode string into ClientMessage
-                                    // All that we do here is forward the request to the main loop
-                                    // Since we are not working at massive scales, this is fine and
-                                    // keeps things relatively simple
-                                    tx.send(msg).await.unwrap();
+                                    client_tx.send(msg).await.unwrap();
                                 }
                                 Err(e) => error!("{}", e),
                             },
@@ -121,12 +123,19 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                             granularity: SteppingGranularity::Statement
                         })).await?;
                     }
+                    "quit" => {
+                        info!("Received quit request, shutting down...");
+                        adapter.quit().await?;
+                        state.broadcast("quit".to_string()).await?;
+                        break
+                    }
                     _ => ()
                 }
             }
         }
     }
 
+    trace!("End of main loop");
     Ok(())
 }
 
