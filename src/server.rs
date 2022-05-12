@@ -91,7 +91,12 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                             AdapterMessage::Response(payload) => handle_response(&mut state, &mut adapter, payload).await?,
                         }
                     },
-                    Ok(None) => break,
+                    Ok(None) => {
+                        info!("Debug adapter shut down, ending session");
+                        // TODO: Clean up sockets and other things
+                        state.broadcast("quit".to_string()).await?;
+                        break
+                    },
                     Err(e) => error!("{}", e)
                 }
             }
@@ -138,6 +143,13 @@ impl State {
             scopes: HashMap::new(),
             variables: HashMap::new(),
         }
+    }
+
+    async fn broadcast(&mut self, msg: String) -> Result<()> {
+        for tx in self.clients.values() {
+            tx.send(msg.clone()).await?;
+        }
+        Ok(())
     }
 }
 

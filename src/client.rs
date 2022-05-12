@@ -32,6 +32,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
                     match res {
                         Ok(0) => {
                             println!("Server disconnected");
+                            server_in_tx.send("quit".to_string()).unwrap();
                             break
                         },
                         Ok(_) => {
@@ -47,14 +48,21 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
         }
     });
 
-    // Manually send requests
     let mut stdin = BufReader::new(tokio::io::stdin());
     loop {
         let mut input = String::new();
-        stdin.read_line(&mut input).await?;
-
-        // TODO: Actually validate that it's something useful
-        to_server_tx.send(input).await?;
+        select! {
+            Ok(_) = stdin.read_line(&mut input) => {
+                to_server_tx.send(input).await?;
+            },
+            Ok(msg) = server_in_rx.recv() => {
+                #[allow(clippy::single_match)]
+                match msg.as_str() {
+                    "quit" => break,
+                    _ => ()
+                }
+            }
+        }
     }
 
     Ok(())
