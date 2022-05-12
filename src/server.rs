@@ -96,8 +96,19 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                 }
             }
             // Incoming client requests
-            Some(req) = client_rx.recv() => {
-                // TODO: Accept client input
+            Some(cmd) = client_rx.recv() => {
+                #[allow(clippy::single_match)]
+                match cmd.as_str() {
+                    "in" => {
+                        adapter.send_request(Request::StepIn(StepInArgs {
+                            thread_id: *state.threads.iter().next().unwrap().0,
+                            single_thread: false,
+                            target_id: None,
+                            granularity: SteppingGranularity::Statement
+                        })).await?;
+                    }
+                    _ => ()
+                }
             }
         }
     }
