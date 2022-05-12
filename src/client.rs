@@ -8,7 +8,7 @@ use tokio::sync::{broadcast, mpsc};
 
 pub async fn run(socket_path: PathBuf) -> Result<()> {
     // Server message handling task
-    let (to_server_tx, mut to_server_rx) = mpsc::channel::<Request>(32);
+    let (to_server_tx, mut to_server_rx) = mpsc::channel::<String>(32);
     let (server_in_tx, mut server_in_rx) = broadcast::channel::<String>(32);
     tokio::spawn(async move {
         let server = UnixStream::connect(socket_path).await.unwrap();
@@ -20,9 +20,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
             select! {
                 res = to_server_rx.recv() => {
                     match res {
-                        Some(req) => {
-                            let mut req = serde_json::to_string(&req).unwrap();
-                            println!("TO SERVER: {}", req);
+                        Some(mut req) => {
                             req += "\n";
                             server_wr.write_all(req.as_bytes()).await.unwrap();
                         },
@@ -53,16 +51,10 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
     let mut stdin = BufReader::new(tokio::io::stdin());
     loop {
         let mut input = String::new();
-        stdin.read_line(&mut input).await.unwrap();
+        stdin.read_line(&mut input).await?;
 
-        if input == "quit" {
-            break;
-        };
-
-        match serde_json::from_str::<Request>(&input) {
-            Ok(req) => to_server_tx.send(req).await?,
-            Err(e) => error!("{}", e),
-        };
+        // TODO: Actually validate that it's something useful
+        to_server_tx.send(input).await?;
     }
 
     Ok(())
