@@ -132,6 +132,8 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                     _ => ()
                 }
             }
+            // TODO: Spin down all threads and tasks before shutting down
+            else => break
         }
     }
 
