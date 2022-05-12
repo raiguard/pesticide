@@ -11,6 +11,9 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{Framed, LinesCodec};
 
+// LIFECYCLE:
+// -
+
 pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
     // Spin up debug adapter
     let config = Config::new(config_path)?;
@@ -23,6 +26,27 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
 
     // Client listener
     let client_listener = UnixListener::bind(socket_path)?;
+
+    // Send initialize request
+    let adapter_id = adapter.config.adapter_id.clone();
+    adapter
+        .send_request(Request::Initialize(InitializeArgs {
+            client_id: Some("pesticide".to_string()),
+            client_name: Some("Pesticide".to_string()),
+            adapter_id,
+            locale: Some("en-US".to_string()),
+            lines_start_at_1: true,
+            columns_start_at_1: true,
+            path_format: Some(InitializePathFormat::Path),
+            supports_variable_type: false,
+            supports_variable_paging: false,
+            supports_run_in_terminal_request: true,
+            supports_memory_references: false,
+            supports_progress_reporting: false,
+            supports_invalidated_event: false,
+            supports_memory_event: false,
+        }))
+        .await?;
 
     loop {
         select! {
