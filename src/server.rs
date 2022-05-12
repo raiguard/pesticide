@@ -2,6 +2,7 @@ use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap_types::*;
 use anyhow::Result;
+use futures_util::SinkExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::net::{UnixListener, UnixStream};
@@ -62,21 +63,29 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                 trace!("NEW CLIENT: {:?}", addr);
                 let tx = client_tx.clone();
                 let stream = Framed::new(stream, LinesCodec::new());
-                // Save client to shared state
                 let mut client = Client::new(&mut state, stream).await.unwrap();
 
-                // Worker thread
+                // Spawn worker thread
                 tokio::spawn(async move {
-                    while let Some(line) = client.stream.next().await {
-                        match line {
-                            Ok(msg) => {
-                                // TODO: Decode string into ClientMessage
-                                // All that we do here is forward the request to the main loop
-                                // Since we are not working at massive scales, this is fine and
-                                // keeps things relatively simple
-                                tx.send(msg).await.unwrap();
+                    loop {
+                        select! {
+                            // Incoming messages
+                            Some(line) = client.stream.next() => match line {
+                                Ok(msg) => {
+                                    // TODO: Decode string into ClientMessage
+                                    // All that we do here is forward the request to the main loop
+                                    // Since we are not working at massive scales, this is fine and
+                                    // keeps things relatively simple
+                                    tx.send(msg).await.unwrap();
+                                }
+                                Err(e) => error!("{}", e),
+                            },
+                            // Outgoing messages
+                            Some(msg) = client.rx.recv() => {
+                                debug!("TO CLIENT: {msg}");
+                                let msg = msg + "\n";
+                                client.stream.send(msg).await.unwrap();
                             }
-                            Err(e) => error!("{}", e),
                         }
                     }
                 });
@@ -182,7 +191,9 @@ async fn handle_event(
         Event::Continued(_) => {
             info!("Continuing");
         }
-        Event::Exited(_) => todo!(),
+        Event::Exited(_) => {
+            state.broadcast("quit".to_string()).await?;
+        }
         Event::Module(_) => (), // TODO:
         Event::Output(event) => match event.category {
             Some(OutputCategory::Telemetry) => (), // IDGAF about telemetry
