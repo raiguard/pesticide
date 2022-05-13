@@ -65,16 +65,14 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
     let (client_tx, mut client_rx) = mpsc::channel::<String>(32);
 
     // Main loop - act on async messages
-    trace!("Start of main loop");
     loop {
-        trace!("Main looped");
         select! {
             // New client connections
             Ok((stream, _addr)) = socket.accept() => {
                 let client_tx = client_tx.clone();
                 let stream = Framed::new(stream, LinesCodec::new());
                 let mut client = Client::new(&mut state, stream).await.unwrap();
-                trace!("Client connected: {}", client.id);
+                info!("Client connected: {}", client.id);
 
                 // Spawn worker thread
                 // This worker thread simply acts as a validating middleman.
@@ -148,7 +146,6 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
         }
     }
 
-    trace!("End of main loop");
     Ok(())
 }
 
