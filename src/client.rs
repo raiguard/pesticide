@@ -6,11 +6,13 @@ use crossterm::terminal::{
 };
 use futures_util::{SinkExt, StreamExt};
 use std::io::Stdout;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::net::UnixStream;
 use tokio::select;
 use tokio_util::codec::{Framed, LinesCodec};
 use tui::backend::CrosstermBackend;
+use tui::style::{Color, Modifier, Style};
+use tui::widgets::{Borders, ListItem, ListState};
 use tui::{widgets, Terminal};
 
 pub async fn run(socket_path: PathBuf) -> Result<()> {
@@ -28,10 +30,10 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
     let mut socket = Framed::new(socket, LinesCodec::new());
     let mut input_stream = crossterm::event::EventStream::new();
 
-    let mut state = State::new();
+    let mut state = State::new().await?;
 
     // Draw UI with initial state
-    draw_ui(&mut terminal)?;
+    draw_ui(&mut terminal, &mut state)?;
 
     // Main loop
     loop {
@@ -64,7 +66,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
             }
         }
         // TODO: Only do this when necessary
-        draw_ui(&mut terminal)?
+        draw_ui(&mut terminal, &mut state)?
     }
 
     // Restore terminal
@@ -101,6 +103,18 @@ async fn handle_input(
             KeyCode::Delete => (),
             KeyCode::Insert => (),
             KeyCode::F(_) => (),
+            KeyCode::Char('j') => {
+                let selected = state.file_state.selected().unwrap();
+                if selected < state.file.len() {
+                    state.file_state.select(Some(selected + 1));
+                }
+            }
+            KeyCode::Char('k') => {
+                let selected = state.file_state.selected().unwrap();
+                if selected > 0 {
+                    state.file_state.select(Some(selected - 1));
+                }
+            }
             KeyCode::Char('i') => socket.send("in".to_string()).await?,
             KeyCode::Char('q') => return Ok(Order::Quit),
             KeyCode::Char(_) => (),
@@ -114,12 +128,26 @@ async fn handle_input(
     Ok(Order::None)
 }
 
-fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
+fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>, state: &mut State) -> Result<()> {
     terminal.draw(|f| {
-        let block = widgets::Block::default()
-            .title("Pesticide")
-            .borders(widgets::Borders::ALL);
-        f.render_widget(block, f.size());
+        let num_width = format!("{}", state.file.len()).len();
+        // TODO: Store the file content as ListItems so we don't have to convert on every render
+        let lines: Vec<ListItem> = state
+            .file
+            .iter()
+            .enumerate()
+            .map(|(i, line)| format!("{:>width$}  {}", i + 1, line, width = num_width))
+            .map(ListItem::new)
+            .collect();
+        let file = widgets::List::new(lines)
+            .block(
+                widgets::Block::default()
+                    .title("Demo file")
+                    .borders(Borders::ALL),
+            )
+            .style(Style::default().fg(Color::White))
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        f.render_stateful_widget(file, f.size(), &mut state.file_state);
     })?;
 
     Ok(())
@@ -131,14 +159,24 @@ enum Order {
 }
 
 struct State {
+    file: Vec<String>,
+    file_state: ListState,
     focused: FocusedWidget,
 }
 
 impl State {
-    pub fn new() -> Self {
-        Self {
+    pub async fn new() -> Result<Self> {
+        // TEMPORARY: Display the main test file
+        let path = std::env::current_dir()?.join("test.py");
+        let contents = tokio::fs::read_to_string(path).await?;
+        let lines: Vec<String> = contents.lines().map(str::to_string).collect();
+        let mut state = ListState::default();
+        state.select(Some(0));
+        Ok(Self {
+            file: lines,
+            file_state: state,
             focused: FocusedWidget::Variables,
-        }
+        })
     }
 }
 
