@@ -28,6 +28,8 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
     let mut socket = Framed::new(socket, LinesCodec::new());
     let mut input_stream = crossterm::event::EventStream::new();
 
+    let mut state = State::new();
+
     // Draw UI with initial state
     draw_ui(&mut terminal)?;
 
@@ -36,7 +38,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
         select! {
             // User input
             Some(Ok(event)) = input_stream.next() => {
-                match handle_input(&mut socket, event).await? {
+                match handle_input(&mut socket, &mut state, event).await? {
                     Order::Quit => break,
                     Order::None => () // Duh
                 }
@@ -61,6 +63,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
                 }
             }
         }
+        // TODO: Only do this when necessary
         draw_ui(&mut terminal)?
     }
 
@@ -78,6 +81,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
 
 async fn handle_input(
     socket: &mut Framed<UnixStream, LinesCodec>,
+    state: &mut State,
     event: crossterm::event::Event,
 ) -> Result<Order> {
     match event {
@@ -97,11 +101,9 @@ async fn handle_input(
             KeyCode::Delete => (),
             KeyCode::Insert => (),
             KeyCode::F(_) => (),
-            KeyCode::Char(c) => match c {
-                'i' => socket.send("in".to_string()).await?,
-                'q' => return Ok(Order::Quit),
-                _ => (),
-            },
+            KeyCode::Char('i') => socket.send("in".to_string()).await?,
+            KeyCode::Char('q') => return Ok(Order::Quit),
+            KeyCode::Char(_) => (),
             KeyCode::Null => (),
             KeyCode::Esc => (),
         },
@@ -126,4 +128,25 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
 enum Order {
     None,
     Quit,
+}
+
+struct State {
+    focused: FocusedWidget,
+}
+
+impl State {
+    pub fn new() -> Self {
+        Self {
+            focused: FocusedWidget::Variables,
+        }
+    }
+}
+
+enum FocusedWidget {
+    Breakpoints,
+    CallStack,
+    DebugConsole,
+    SourceFile,
+    Variables,
+    Watch,
 }
