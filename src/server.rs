@@ -5,6 +5,7 @@ use anyhow::Result;
 use futures_util::SinkExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Stdio;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::process::Command;
 use tokio::select;
@@ -22,6 +23,14 @@ use tokio_util::codec::{Framed, LinesCodec};
 //   - Listens for client requests and forwards them to the server
 
 pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
+    // Initialize logging
+    simplelog::TermLogger::init(
+        log::LevelFilter::Trace,
+        simplelog::Config::default(),
+        simplelog::TerminalMode::Mixed,
+        simplelog::ColorChoice::Auto,
+    )?;
+
     // Spin up debug adapter
     let config = Config::new(config_path)?;
     let mut adapter = Adapter::new(config)?;
@@ -61,11 +70,11 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
         trace!("Main looped");
         select! {
             // New client connections
-            Ok((stream, addr)) = socket.accept() => {
-                trace!("NEW CLIENT: {:?}", addr);
+            Ok((stream, _addr)) = socket.accept() => {
                 let client_tx = client_tx.clone();
                 let stream = Framed::new(stream, LinesCodec::new());
                 let mut client = Client::new(&mut state, stream).await.unwrap();
+                trace!("Client connected: {}", client.id);
 
                 // Spawn worker thread
                 // This worker thread simply acts as a validating middleman.
@@ -75,12 +84,15 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                     loop {
                         select! {
                             // Incoming messages
-                            Some(line) = client.stream.next() => match line {
-                                Ok(msg) => {
+                            msg = client.stream.next() => match msg{
+                                Some(Ok(msg)) => {
                                     // TODO: Decode string into ClientMessage
                                     client_tx.send(msg).await.unwrap();
                                 }
-                                Err(e) => error!("{}", e),
+                                Some(Err(e)) => error!("{}", e),
+                                None => {
+                                    info!("Client disconnected: {}", client.id);
+                                }
                             },
                             // Outgoing messages
                             Some(msg) = client.rx.recv() => {
@@ -172,6 +184,7 @@ impl State {
 }
 
 struct Client {
+    id: u32,
     rx: mpsc::Receiver<String>,
     stream: Framed<UnixStream, LinesCodec>,
 }
@@ -181,11 +194,11 @@ impl Client {
         // Create a channel for this client
         let (tx, rx) = mpsc::channel(32);
 
-        let client_id = state.next_client;
+        let id = state.next_client;
         state.next_client += 1;
-        state.clients.insert(client_id, tx);
+        state.clients.insert(id, tx);
 
-        Ok(Self { rx, stream })
+        Ok(Self { id, rx, stream })
     }
 }
 
@@ -259,7 +272,10 @@ async fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Resul
             RunInTerminalKind::Integrated => req.args,
         };
 
-        let cmd = Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn();
+        let cmd = Command::new(cmd[0].clone())
+            .args(cmd[1..].to_vec())
+            .stdin(Stdio::null()) // So we can still ctrl+c the server
+            .spawn();
 
         let (success, message) = match &cmd {
             Ok(_) => (true, None),

@@ -65,14 +65,6 @@ async fn main() -> Result<()> {
         run_type,
     };
 
-    // Initialize logging
-    simplelog::TermLogger::init(
-        log::LevelFilter::Trace,
-        simplelog::Config::default(),
-        simplelog::TerminalMode::Mixed,
-        simplelog::ColorChoice::Auto,
-    )?;
-
     // Get socket path
     let pid = std::process::id().to_string();
     let runtime_dir = dirs::runtime_dir()

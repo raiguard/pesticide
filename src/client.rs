@@ -14,6 +14,8 @@ use tui::backend::CrosstermBackend;
 use tui::{widgets, Terminal};
 
 pub async fn run(socket_path: PathBuf) -> Result<()> {
+    // TODO: Set up centralized logging on server
+
     // Prepare terminal
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
