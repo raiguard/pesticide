@@ -35,12 +35,16 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
     loop {
         select! {
             // User input
-            Some(Ok(event)) = input_stream.next() => handle_input(&mut socket, event).await?,
+            Some(Ok(event)) = input_stream.next() => {
+                match handle_input(&mut socket, event).await? {
+                    Order::Quit => break,
+                    Order::None => () // Duh
+                }
+            },
             // Messages from server
             msg = socket.next() => {
                 match msg {
                     Some(Ok(msg)) => {
-                        debug!("FROM SERVER: {msg}");
                         #[allow(clippy::single_match)]
                         match msg.as_str() {
                             "quit" => break,
@@ -75,7 +79,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
 async fn handle_input(
     socket: &mut Framed<UnixStream, LinesCodec>,
     event: crossterm::event::Event,
-) -> Result<()> {
+) -> Result<Order> {
     match event {
         crossterm::event::Event::Key(event) => match event.code {
             KeyCode::Backspace => (),
@@ -94,12 +98,8 @@ async fn handle_input(
             KeyCode::Insert => (),
             KeyCode::F(_) => (),
             KeyCode::Char(c) => match c {
-                // Quit client
-                // TEMPORARY:
-                'q' => std::process::exit(0),
-                // // Kill session
-                // 'k' => socket.send("quit".to_string()).await?,
                 'i' => socket.send("in".to_string()).await?,
+                'q' => return Ok(Order::Quit),
                 _ => (),
             },
             KeyCode::Null => (),
@@ -109,7 +109,7 @@ async fn handle_input(
         crossterm::event::Event::Resize(_, _) => (),
     };
 
-    Ok(())
+    Ok(Order::None)
 }
 
 fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -121,4 +121,9 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     })?;
 
     Ok(())
+}
+
+enum Order {
+    None,
+    Quit,
 }
