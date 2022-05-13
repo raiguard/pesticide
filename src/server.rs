@@ -92,6 +92,7 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                                 Some(Err(e)) => error!("{}", e),
                                 None => {
                                     info!("Client disconnected: {}", client.id);
+                                    break
                                 }
                             },
                             // Outgoing messages
