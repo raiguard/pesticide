@@ -88,44 +88,34 @@ async fn handle_input(
 ) -> Result<Order> {
     match event {
         crossterm::event::Event::Key(event) => match event.code {
-            KeyCode::Backspace => (),
-            KeyCode::Enter => (),
-            KeyCode::Left => (),
-            KeyCode::Right => (),
-            KeyCode::Up => (),
-            KeyCode::Down => (),
-            KeyCode::Home => (),
-            KeyCode::End => (),
-            KeyCode::PageUp => (),
-            KeyCode::PageDown => (),
-            KeyCode::Tab => (),
-            KeyCode::BackTab => (),
-            KeyCode::Delete => (),
-            KeyCode::Insert => (),
-            KeyCode::F(_) => (),
-            KeyCode::Char('g') => {
-                state.file_state.select(Some(0));
-            }
-            KeyCode::Char('G') => {
-                state.file_state.select(Some(state.file.len() - 1));
-            }
-            KeyCode::Char('j') => {
-                let selected = state.file_state.selected().unwrap();
-                if selected < state.file.len() - 1 {
-                    state.file_state.select(Some(selected + 1));
+            // Movement
+            KeyCode::Char('g') => match state.focused {
+                FocusedWidget::SourceFile => state.file_state.select(Some(0)),
+            },
+            KeyCode::Char('G') => match state.focused {
+                FocusedWidget::SourceFile => state.file_state.select(Some(state.file.len() - 1)),
+            },
+            KeyCode::Char('j') => match state.focused {
+                FocusedWidget::SourceFile => {
+                    let selected = state.file_state.selected().unwrap();
+                    if selected < state.file.len() - 1 {
+                        state.file_state.select(Some(selected + 1));
+                    }
                 }
-            }
-            KeyCode::Char('k') => {
-                let selected = state.file_state.selected().unwrap();
-                if selected > 0 {
-                    state.file_state.select(Some(selected - 1));
+            },
+            KeyCode::Char('k') => match state.focused {
+                FocusedWidget::SourceFile => {
+                    let selected = state.file_state.selected().unwrap();
+                    if selected > 0 {
+                        state.file_state.select(Some(selected - 1));
+                    }
                 }
-            }
+            },
+            // TEMPORARY: Step in
             KeyCode::Char('i') => socket.send("in".to_string()).await?,
+            // Quit
             KeyCode::Char('q') => return Ok(Order::Quit),
-            KeyCode::Char(_) => (),
-            KeyCode::Null => (),
-            KeyCode::Esc => (),
+            _ => (),
         },
         crossterm::event::Event::Mouse(_) => (),
         crossterm::event::Event::Resize(_, _) => (),
@@ -182,16 +172,16 @@ impl State {
         Ok(Self {
             file: lines,
             file_state: state,
-            focused: FocusedWidget::Variables,
+            focused: FocusedWidget::SourceFile,
         })
     }
 }
 
 enum FocusedWidget {
-    Breakpoints,
-    CallStack,
-    DebugConsole,
+    // Breakpoints,
+    // CallStack,
+    // DebugConsole,
     SourceFile,
-    Variables,
-    Watch,
+    // Variables,
+    // Watch,
 }
