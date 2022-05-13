@@ -25,7 +25,7 @@ use tokio_util::codec::{Framed, LinesCodec};
 pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
     // Initialize logging
     simplelog::TermLogger::init(
-        log::LevelFilter::Trace,
+        log::LevelFilter::Debug,
         simplelog::Config::default(),
         simplelog::TerminalMode::Mixed,
         simplelog::ColorChoice::Auto,
