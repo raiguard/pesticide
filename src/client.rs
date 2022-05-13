@@ -103,9 +103,15 @@ async fn handle_input(
             KeyCode::Delete => (),
             KeyCode::Insert => (),
             KeyCode::F(_) => (),
+            KeyCode::Char('g') => {
+                state.file_state.select(Some(0));
+            }
+            KeyCode::Char('G') => {
+                state.file_state.select(Some(state.file.len() - 1));
+            }
             KeyCode::Char('j') => {
                 let selected = state.file_state.selected().unwrap();
-                if selected < state.file.len() {
+                if selected < state.file.len() - 1 {
                     state.file_state.select(Some(selected + 1));
                 }
             }
@@ -142,8 +148,9 @@ fn draw_ui(terminal: &mut Terminal<CrosstermBackend<Stdout>>, state: &mut State)
         let file = widgets::List::new(lines)
             .block(
                 widgets::Block::default()
-                    .title("Demo file")
-                    .borders(Borders::ALL),
+                    .title(" Source file ")
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(Color::Green)),
             )
             .style(Style::default().fg(Color::White))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
