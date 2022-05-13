@@ -98,8 +98,8 @@ enum RunType {
 const HELP: &str = "\
 usage: pesticide [options]
 options:
-    --config          Debugger configuration file (default: $PWD/pesticide.toml)
+    --config <FILE>   Debugger configuration file (default: $PWD/pesticide.toml)
     --help            Print help information
-    --server          Start a headless session
+    --server          Initialize as server instead of client
     --session <NAME>  Set a session name (default: PID)
 ";
