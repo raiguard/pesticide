@@ -227,12 +227,14 @@ async fn handle_request(
 
     // The only "reverse request" in the DAP is RunInTerminal
     if let Request::RunInTerminal(mut req) = payload.request {
+        debug!("{:?}", req.args);
         let mut child = match req.kind {
             RunInTerminalKind::External => {
                 let mut cmd = adapter.config.term_cmd.clone();
                 cmd.append(&mut req.args);
                 Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn()
             }
+            // FIXME: This completely breaks the UI because this process is attaching to our terminal somehow
             RunInTerminalKind::Integrated => Command::new(req.args[0].clone())
                 .args(req.args[1..].to_vec())
                 .stdin(Stdio::null())

@@ -131,7 +131,6 @@ impl Ui {
             // Layout
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .margin(1)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
                 .split(f.size());
 
@@ -206,21 +205,21 @@ impl Ui {
             );
             f.render_widget(stack_frames_list, chunks[0]);
 
-            // Debugee console
-            let console_list = widgets::List::new(
-                state
-                    .console
-                    .iter()
-                    .cloned()
-                    .map(ListItem::new)
-                    .collect::<Vec<ListItem>>(),
-            )
-            .block(
-                widgets::Block::default()
-                    .title("Debug console")
-                    .borders(Borders::ALL),
-            );
-            f.render_widget(console_list, chunks[1]);
+            // // Debugee console
+            // let console_list = widgets::List::new(
+            //     state
+            //         .console
+            //         .iter()
+            //         .cloned()
+            //         .map(ListItem::new)
+            //         .collect::<Vec<ListItem>>(),
+            // )
+            // .block(
+            //     widgets::Block::default()
+            //         .title("Debug console")
+            //         .borders(Borders::ALL),
+            // );
+            // f.render_widget(console_list, chunks[1]);
         })?;
 
         Ok(())
