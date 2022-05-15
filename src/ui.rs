@@ -161,7 +161,7 @@ impl Ui {
                         .unwrap_or_else(|| String::from("Running"));
                     stack_frames.push(ListItem::new(Spans::from(vec![
                         Span::styled(
-                            format!("{:<22}", thread.name),
+                            format!("▼ {:<20}", thread.name),
                             Style::default().fg(Color::Blue),
                         ),
                         Span::styled(reason.to_string(), Style::default().fg(Color::White)),
