@@ -50,7 +50,6 @@ impl Adapter {
         });
 
         let stdout = BufReader::new(child.stdout.take().context("Failed to open stdout")?);
-
         let stdin = BufWriter::new(child.stdin.take().context("Failed to open stdin")?);
 
         Ok(Self {

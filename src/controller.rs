@@ -2,38 +2,21 @@ use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap_types::*;
 use anyhow::Result;
-use futures_util::SinkExt;
+use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::net::{UnixListener, UnixStream};
 use tokio::process::Command;
 use tokio::select;
-use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-use tokio_util::codec::{Framed, LinesCodec};
 
-// LIFECYCLE:
-// - Bind to socket
-// - Initialize debug adapter with provided configuration
-// - Send initialize request
-// - Start main loop, which:
-//   - Listens for messages from the adapter
-//   - Listens for client connections and spawns worker threads
-//   - Listens for client requests and forwards them to the server
-
-pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
-    // Initialize logging
-    simplelog::TermLogger::init(
-        log::LevelFilter::Debug,
-        simplelog::Config::default(),
-        simplelog::TerminalMode::Mixed,
-        simplelog::ColorChoice::Auto,
-    )?;
+pub async fn run(config_path: PathBuf) -> Result<()> {
+    // Initialize state
+    let mut state = State::new();
+    // Initialize UI
+    let mut ui = crate::ui::Ui::new().await?;
 
     // Spin up debug adapter
-    let config = Config::new(config_path)?;
-    let mut adapter = Adapter::new(config)?;
+    let mut adapter = Adapter::new(Config::new(config_path)?)?;
     // Send initialize request
     let adapter_id = adapter.config.adapter_id.clone();
     adapter
@@ -55,54 +38,11 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
         }))
         .await?;
 
-    // Initialize shared state
-    let mut state = State::new();
-
-    // Connect to socket
-    let socket = UnixListener::bind(socket_path)?;
-
-    // Channel for clients to send requests through
-    let (client_tx, mut client_rx) = mpsc::channel::<String>(32);
+    ui.draw(&state)?;
 
     // Main loop - act on async messages
     loop {
         select! {
-            // New client connections
-            Ok((stream, _addr)) = socket.accept() => {
-                let client_tx = client_tx.clone();
-                let stream = Framed::new(stream, LinesCodec::new());
-                let mut client = Client::new(&mut state, stream).await.unwrap();
-                info!("Client connected: {}", client.id);
-
-                // Spawn worker thread
-                // This worker thread simply acts as a validating middleman.
-                // We are only going to have a handful of clients per session,
-                // so it's fine to do all processing on the same thread.
-                tokio::spawn(async move {
-                    loop {
-                        select! {
-                            // Incoming messages
-                            msg = client.stream.next() => match msg{
-                                Some(Ok(msg)) => {
-                                    // TODO: Decode string into ClientMessage
-                                    client_tx.send(msg).await.unwrap();
-                                }
-                                Some(Err(e)) => error!("{}", e),
-                                None => {
-                                    info!("Client disconnected: {}", client.id);
-                                    break
-                                }
-                            },
-                            // Outgoing messages
-                            Some(msg) = client.rx.recv() => {
-                                debug!("TO CLIENT: {msg}");
-                                let msg = msg + "\n";
-                                client.stream.send(msg).await.unwrap();
-                            }
-                        }
-                    }
-                });
-            },
             // Incoming debug adapter messages
             res = adapter.read() => {
                 match res {
@@ -115,46 +55,32 @@ pub async fn run(socket_path: PathBuf, config_path: PathBuf) -> Result<()> {
                     },
                     Ok(None) => {
                         info!("Debug adapter shut down, ending session");
-                        // TODO: Clean up sockets and other things
-                        state.broadcast("quit".to_string()).await?;
+                        break
                     },
                     Err(e) => error!("{}", e)
                 }
             }
-            // Incoming client requests
-            Some(cmd) = client_rx.recv() => {
+            // User input
+            Some(Ok(event)) = ui.input_stream.next() => {
                 #[allow(clippy::single_match)]
-                match cmd.as_str() {
-                    "in" => {
-                        adapter.send_request(Request::StepIn(StepInArgs {
-                            thread_id: *state.threads.iter().next().unwrap().0,
-                            single_thread: false,
-                            target_id: None,
-                            granularity: SteppingGranularity::Statement
-                        })).await?;
-                    }
-                    "quit" => {
-                        info!("Received quit request, shutting down...");
-                        adapter.quit().await?;
-                        state.broadcast("quit".to_string()).await?;
-                    }
-                    _ => ()
-                }
+                match ui.handle_input(event).await? {
+                    crate::ui::Order::Quit => break,
+                    _ => (),
+                };
             }
-            // TODO: Spin down all threads and tasks before shutting down
-            else => break
         }
+
+        ui.draw(&state)?;
     }
+
+    error!("HOW DID WE GET HERE");
+    adapter.quit().await?;
+    ui.destroy()?;
 
     Ok(())
 }
 
-struct State {
-    /// Send messages to clients
-    clients: HashMap<u32, mpsc::Sender<String>>,
-    next_client: u32,
-
-    // Debug session state
+pub struct State {
     threads: HashMap<u32, Thread>,
     stack_frames: HashMap<u32, Vec<StackFrame>>,
     scopes: HashMap<u32, Vec<Scope>>,
@@ -164,39 +90,11 @@ struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            clients: HashMap::new(),
-            next_client: 0,
             threads: HashMap::new(),
             stack_frames: HashMap::new(),
             scopes: HashMap::new(),
             variables: HashMap::new(),
         }
-    }
-
-    async fn broadcast(&mut self, msg: String) -> Result<()> {
-        for tx in self.clients.values() {
-            tx.send(msg.clone()).await?;
-        }
-        Ok(())
-    }
-}
-
-struct Client {
-    id: u32,
-    rx: mpsc::Receiver<String>,
-    stream: Framed<UnixStream, LinesCodec>,
-}
-
-impl Client {
-    pub async fn new(state: &mut State, stream: Framed<UnixStream, LinesCodec>) -> Result<Self> {
-        // Create a channel for this client
-        let (tx, rx) = mpsc::channel(32);
-
-        let id = state.next_client;
-        state.next_client += 1;
-        state.clients.insert(id, tx);
-
-        Ok(Self { id, rx, stream })
     }
 }
 
@@ -212,7 +110,7 @@ async fn handle_event(
             info!("Continuing");
         }
         Event::Exited(_) => {
-            state.broadcast("quit".to_string()).await?;
+            // state.broadcast("quit".to_string()).await?;
         }
         Event::Module(_) => (), // TODO:
         Event::Output(event) => match event.category {
@@ -228,7 +126,9 @@ async fn handle_event(
         Event::Stopped(event) => {
             info!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 
-            // Request threads
+            // Request threads.
+            // This sets off a chain reaction of events to get all of the info
+            // we need.
             adapter.send_request(Request::Threads).await?;
         }
         Event::Thread(event) => {
@@ -340,7 +240,6 @@ async fn handle_response(
         Response::RunInTerminal(_) => (),
         Response::Scopes(res) => {
             if let Some(Request::Scopes(req)) = req {
-                // TEMPORARY:
                 for scope in &res.scopes {
                     adapter
                         .send_request(Request::Variables(VariablesArgs {
@@ -399,7 +298,10 @@ async fn handle_response(
             }
 
             if adapter.num_requests() == 0 {
-                info!("{:#?}", state.variables);
+                info!("THREADS: {:#?}", state.threads);
+                info!("STACK FRAMES: {:#?}", state.stack_frames);
+                info!("SCOPES: {:#?}", state.scopes);
+                info!("VARIABLES: {:#?}", state.variables);
             }
         }
     };

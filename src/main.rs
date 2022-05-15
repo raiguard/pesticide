@@ -28,20 +28,25 @@
 // - Dedicated task to manage I/O with the server
 // - select! over client TUI or CLI inputs, and messages received from the server
 // - separate tasks for rendering the UI and accepting user input
+//
+// MVP ARCHITECTURE:
+// - Single program, no client/server stuff yet, it adds a ton of complexity
+// - Limited UI customization, i.e. lazygit
 
 // TODO: Clean out unwraps
 
 mod adapter;
-mod client;
 mod config;
+mod controller;
 mod dap_types;
-mod server;
+mod ui;
 
 #[macro_use]
 extern crate log;
 
 use anyhow::Result;
 use pico_args::Arguments;
+use std::fs::File;
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -52,47 +57,34 @@ async fn main() -> Result<()> {
         println!("{}", HELP);
         return Ok(());
     }
-    let run_type = if args.contains("--server") {
-        RunType::Server
-    } else {
-        RunType::Client
-    };
     let cli = Cli {
         config: args
             .opt_value_from_str("--config")?
             .unwrap_or_else(|| std::env::current_dir().unwrap().join("pesticide.toml")),
-        session: args.opt_value_from_str("--session")?,
-        run_type,
     };
 
-    // Get socket path
-    let pid = std::process::id().to_string();
-    let runtime_dir = dirs::runtime_dir()
-        .expect("Could not get runtime directory")
+    // Create log file
+    let log = dirs::data_dir()
+        .expect("Unable to get local data directory")
         .join("pesticide");
-    if !runtime_dir.exists() {
-        tokio::fs::create_dir_all(&runtime_dir).await?;
+    if !log.exists() {
+        tokio::fs::create_dir_all(log.clone()).await?;
     }
-    let socket_path = runtime_dir.join(format!("{}.sock", cli.session.as_ref().unwrap_or(&pid)));
+    let log = log.join("pesticide.log");
 
-    // Run
-    match cli.run_type {
-        RunType::Client => client::run(socket_path).await,
-        RunType::Server => server::run(socket_path, cli.config).await,
-    }
+    // Initialize logging
+    simplelog::WriteLogger::init(
+        log::LevelFilter::Debug,
+        simplelog::Config::default(),
+        File::create(log)?,
+    )?;
+
+    controller::run(cli.config).await
 }
 
 #[derive(Debug)]
 pub struct Cli {
     config: PathBuf,
-    run_type: RunType,
-    session: Option<String>,
-}
-
-#[derive(Debug)]
-enum RunType {
-    Client,
-    Server,
 }
 
 const HELP: &str = "\
