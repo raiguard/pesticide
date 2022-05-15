@@ -48,17 +48,17 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
 
     loop {
         // Act on incoming messages
-        let mut action = None;
+        let mut actions = vec![];
         select! {
             // Incoming debug adapter messages
             res = adapter.read() => {
                 match res {
                     Ok(Some(msg)) => {
-                        action = match msg {
+                        actions.append(&mut match msg {
                             AdapterMessage::Event(payload) => handle_event(&mut state, &mut adapter, payload).await?,
                             AdapterMessage::Request(payload) => handle_request(&mut adapter, payload, debugee_tx.clone()).await?,
                             AdapterMessage::Response(payload) => handle_response(&mut state, &mut adapter, payload).await?,
-                        };
+                        });
                     },
                     Ok(None) => {
                         info!("Debug adapter shut down, ending session");
@@ -70,27 +70,20 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
             // Debugee stdout
             Some(line) = debugee_rx.recv() => {
                 state.console.push(line);
-                action = Some(Action::Redraw);
+                actions.push(Action::Redraw);
             }
             // User input
             Some(Ok(event)) = ui.input_stream.next() => {
-                action = ui.handle_input(&mut state, event)?
+                actions.append(&mut ui.handle_input(&mut state, event)?)
             }
         }
 
         // Dispatch needed actions
-        if let Some(order) = action {
-            match order {
+        for action in actions {
+            match action {
                 Action::Redraw => ui.draw(&state)?,
-                Action::StepIn => {
-                    adapter
-                        .send_request(Request::StepIn(StepInArgs {
-                            thread_id: state.current_thread,
-                            single_thread: true,
-                            target_id: None,
-                            granularity: SteppingGranularity::Line,
-                        }))
-                        .await?;
+                Action::Request(req) => {
+                    adapter.send_request(req).await?;
                 }
                 Action::Quit => break,
                 _ => (),
@@ -142,19 +135,19 @@ impl State {
 }
 
 pub enum Action {
-    Continue,
     Quit,
     Redraw,
-    StepIn,
+    Request(Request),
 }
 
 async fn handle_event(
     state: &mut State,
     adapter: &mut Adapter,
     payload: EventPayload,
-) -> Result<Option<Action>> {
+) -> Result<Vec<Action>> {
     adapter.update_seq(payload.seq);
 
+    let mut actions = vec![];
     match payload.event {
         Event::Continued(event) => {
             if event.all_threads_continued {
@@ -164,7 +157,7 @@ async fn handle_event(
             }
         }
         Event::Exited(_) => {
-            return Ok(Some(Action::Quit));
+            actions.push(Action::Quit);
         }
         Event::Module(_) => (), // TODO:
         Event::Output(event) => match event.category {
@@ -211,18 +204,18 @@ async fn handle_event(
                 }
             };
 
-            return Ok(Some(Action::Redraw));
+            actions.push(Action::Redraw);
         }
     };
 
-    Ok(None)
+    Ok(actions)
 }
 
 async fn handle_request(
     adapter: &mut Adapter,
     payload: RequestPayload,
     debugee_tx: UnboundedSender<String>,
-) -> Result<Option<Action>> {
+) -> Result<Vec<Action>> {
     adapter.update_seq(payload.seq);
 
     // The only "reverse request" in the DAP is RunInTerminal
@@ -272,18 +265,20 @@ async fn handle_request(
         }
     };
 
-    Ok(None)
+    Ok(vec![])
 }
 
 async fn handle_response(
     state: &mut State,
     adapter: &mut Adapter,
     payload: ResponsePayload,
-) -> Result<Option<Action>> {
+) -> Result<Vec<Action>> {
     adapter.update_seq(payload.seq);
 
     // Get the request that triggered this response
     let req = adapter.get_request(payload.request_seq);
+
+    let mut actions = vec![];
 
     match payload.response {
         Response::ConfigurationDone => (),
@@ -333,15 +328,13 @@ async fn handle_response(
         }
         Response::StackTrace(res) => {
             if let Some(Request::StackTrace(req)) = req {
-                for stack_frame in &res.stack_frames {
+                // Request scopes for topmost stack frame
+                if let Some(frame) = res.stack_frames.first() {
                     adapter
-                        .send_request(Request::Scopes(ScopesArgs {
-                            frame_id: stack_frame.id,
-                        }))
+                        .send_request(Request::Scopes(ScopesArgs { frame_id: frame.id }))
                         .await?;
                 }
-
-                state.current_stack_frame = res.stack_frames.get(0).unwrap().id;
+                // Add to state
                 state.stack_frames.insert(req.thread_id, res.stack_frames);
             }
         }
@@ -351,11 +344,15 @@ async fn handle_response(
             let threads = &res.threads;
             state.threads = threads.clone();
 
-            // Request stack frames for each thread
-            for thread in threads {
+            // Request stack frames for the current thread
+            if state
+                .threads
+                .iter()
+                .any(|thread| thread.id == state.current_thread)
+            {
                 adapter
                     .send_request(Request::StackTrace(StackTraceArgs {
-                        thread_id: thread.id,
+                        thread_id: state.current_thread,
                         start_frame: None,
                         levels: None,
                         format: None,
@@ -371,10 +368,17 @@ async fn handle_response(
             }
 
             if adapter.num_requests() == 0 {
-                return Ok(Some(Action::Redraw));
+                // Set current stack frame to topmost of current thread.
+                // If the current thread has no stack frames, or they're
+                // somehow empty, select none of them.
+                state.current_stack_frame = state.stack_frames[&state.current_thread]
+                    .first()
+                    .map(|frame| frame.id)
+                    .unwrap_or(0);
+                actions.push(Action::Redraw);
             }
         }
     };
 
-    Ok(None)
+    Ok(actions)
 }

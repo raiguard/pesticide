@@ -78,7 +78,8 @@ impl Ui {
         &mut self,
         state: &mut crate::controller::State,
         event: crossterm::event::Event,
-    ) -> Result<Option<Action>> {
+    ) -> Result<Vec<Action>> {
+        let mut actions = vec![];
         match event {
             crossterm::event::Event::Key(event) => match event.code {
                 KeyCode::Char(' ') => match self.focused {
@@ -90,6 +91,16 @@ impl Ui {
                                         self.expanded_threads.remove(thread_id);
                                     } else {
                                         self.expanded_threads.insert(*thread_id);
+                                        if state.stack_frames.get(thread_id).is_none() {
+                                            actions.push(Action::Request(Request::StackTrace(
+                                                StackTraceArgs {
+                                                    thread_id: *thread_id,
+                                                    start_frame: None,
+                                                    levels: None,
+                                                    format: None,
+                                                },
+                                            )));
+                                        }
                                     }
                                 }
                                 CallStackItemKind::StackFrame(thread_id, frame_id) => {
@@ -97,7 +108,7 @@ impl Ui {
                                     state.current_stack_frame = *frame_id
                                 }
                             }
-                            return Ok(Some(Action::Redraw));
+                            actions.push(Action::Redraw);
                         }
                     }
                     FocusedWidget::SourceFile => todo!(),
@@ -106,14 +117,14 @@ impl Ui {
                 KeyCode::Char('g') => match self.focused {
                     FocusedWidget::CallStack => {
                         self.call_stack_list.select(0);
-                        return Ok(Some(Action::Redraw));
+                        actions.push(Action::Redraw);
                     }
                     FocusedWidget::SourceFile => self.file_state.select(Some(0)),
                 },
                 KeyCode::Char('G') => match self.focused {
                     FocusedWidget::CallStack => {
                         self.call_stack_list.select(self.call_stack_list.len() - 1);
-                        return Ok(Some(Action::Redraw));
+                        actions.push(Action::Redraw);
                     }
                     FocusedWidget::SourceFile => self.file_state.select(Some(self.file.len() - 1)),
                 },
@@ -121,7 +132,7 @@ impl Ui {
                     FocusedWidget::CallStack => {
                         if let Some(i) = self.call_stack_list.selected() {
                             self.call_stack_list.select(i + 1);
-                            return Ok(Some(Action::Redraw));
+                            actions.push(Action::Redraw);
                         }
                     }
                     FocusedWidget::SourceFile => {
@@ -136,7 +147,7 @@ impl Ui {
                         if let Some(i) = self.call_stack_list.selected() {
                             if i > 0 {
                                 self.call_stack_list.select(i - 1);
-                                return Ok(Some(Action::Redraw));
+                                actions.push(Action::Redraw);
                             }
                         }
                     }
@@ -148,16 +159,21 @@ impl Ui {
                     }
                 },
                 // Adapter requests
-                KeyCode::Char('i') => return Ok(Some(Action::StepIn)),
+                KeyCode::Char('i') => actions.push(Action::Request(Request::StepIn(StepInArgs {
+                    thread_id: state.current_thread,
+                    single_thread: true,
+                    target_id: None,
+                    granularity: SteppingGranularity::Line,
+                }))),
                 // Quit
-                KeyCode::Char('q') => return Ok(Some(Action::Quit)),
+                KeyCode::Char('q') => actions.push(Action::Quit),
                 _ => (),
             },
             crossterm::event::Event::Mouse(_) => (),
-            crossterm::event::Event::Resize(_, _) => return Ok(Some(Action::Redraw)),
+            crossterm::event::Event::Resize(_, _) => actions.push(Action::Redraw),
         };
 
-        Ok(None)
+        Ok(actions)
     }
 
     pub fn draw(&mut self, state: &crate::controller::State) -> Result<()> {
@@ -212,53 +228,51 @@ impl Ui {
             let mut stack_frames: Vec<ListItem> = vec![];
             let mut stacktrace_list = vec![];
             for thread in &state.threads {
-                if let Some(frames) = state.stack_frames.get(&thread.id) {
-                    // Thread header
-                    let reason = state
-                        .stopped_threads
-                        .get(&thread.id)
-                        .or(if state.all_threads_stopped {
-                            Some(&StoppedReason::Pause)
-                        } else {
-                            None
-                        })
-                        .map(|reason| {
-                            match reason {
-                                StoppedReason::Step => "Paused on step",
-                                StoppedReason::Breakpoint => "Paused on breakpoint",
-                                StoppedReason::Exception => "Paused on exception",
-                                StoppedReason::Pause => "Paused",
-                                StoppedReason::Entry => "Paused on entry",
-                                StoppedReason::Goto => "Paused on goto",
-                                StoppedReason::FunctionBreakpoint => {
-                                    "Paused on function breakpoint"
-                                }
-                                StoppedReason::DataBreakpoint => "Paused on data breakpoint",
-                                StoppedReason::InstructionBreakpoint => {
-                                    "Paused on instruction breakpoint"
-                                }
+                // Thread header
+                let reason = state
+                    .stopped_threads
+                    .get(&thread.id)
+                    .or(if state.all_threads_stopped {
+                        Some(&StoppedReason::Pause)
+                    } else {
+                        None
+                    })
+                    .map(|reason| {
+                        match reason {
+                            StoppedReason::Step => "Paused on step",
+                            StoppedReason::Breakpoint => "Paused on breakpoint",
+                            StoppedReason::Exception => "Paused on exception",
+                            StoppedReason::Pause => "Paused",
+                            StoppedReason::Entry => "Paused on entry",
+                            StoppedReason::Goto => "Paused on goto",
+                            StoppedReason::FunctionBreakpoint => "Paused on function breakpoint",
+                            StoppedReason::DataBreakpoint => "Paused on data breakpoint",
+                            StoppedReason::InstructionBreakpoint => {
+                                "Paused on instruction breakpoint"
                             }
-                            .to_string()
-                        })
-                        .unwrap_or_else(|| String::from("Running"));
-                    stack_frames.push(ListItem::new(Spans::from(vec![
-                        Span::styled(
-                            format!(
-                                "{} {:<20}",
-                                if self.expanded_threads.contains(&thread.id) {
-                                    "▼"
-                                } else {
-                                    "▶"
-                                },
-                                thread.name
-                            ),
-                            Style::default().fg(Color::Blue),
+                        }
+                        .to_string()
+                    })
+                    .unwrap_or_else(|| String::from("Running"));
+                stack_frames.push(ListItem::new(Spans::from(vec![
+                    Span::styled(
+                        format!(
+                            "{} {:<20}",
+                            if self.expanded_threads.contains(&thread.id) {
+                                "▼"
+                            } else {
+                                "▶"
+                            },
+                            thread.name
                         ),
-                        Span::styled(reason.to_string(), Style::default().fg(Color::White)),
-                    ])));
-                    stacktrace_list.push(CallStackItemKind::Thread(thread.id));
+                        Style::default().fg(Color::Blue),
+                    ),
+                    Span::styled(reason.to_string(), Style::default().fg(Color::White)),
+                ])));
+                stacktrace_list.push(CallStackItemKind::Thread(thread.id));
 
-                    if self.expanded_threads.contains(&thread.id) {
+                if self.expanded_threads.contains(&thread.id) {
+                    if let Some(frames) = state.stack_frames.get(&thread.id) {
                         // Stack frames within thread
                         for frame in frames {
                             let mut line = vec![
@@ -272,7 +286,10 @@ impl Ui {
                                     Style::default().fg(Color::Green),
                                 ),
                                 Span::styled(
-                                    format!(" {:<20}", frame.name.clone()),
+                                    format!(
+                                        " {:<20}",
+                                        format!("{}|{}", frame.name.clone(), frame.id)
+                                    ),
                                     Style::default().fg(Color::White),
                                 ),
                             ];
