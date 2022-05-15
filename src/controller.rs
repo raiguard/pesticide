@@ -46,7 +46,7 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
         }))
         .await?;
 
-    loop {
+    'main: loop {
         // Act on incoming messages
         let mut actions = vec![];
         select! {
@@ -85,8 +85,7 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
                 Action::Request(req) => {
                     adapter.send_request(req).await?;
                 }
-                Action::Quit => break,
-                _ => (),
+                Action::Quit => break 'main,
             };
         }
     }
