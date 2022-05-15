@@ -5,7 +5,7 @@ adapter_id = "pydbg"
 term_cmd = ["kitty", "--"]
 
 [launch_args]
-program = "${PWD}/test.py"
+program = "/home/rai/dev/projects/personal/pesticide/test/python/test.py"
 args = []
 stopOnEntry = true
 console = "externalTerminal"

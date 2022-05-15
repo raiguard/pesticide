@@ -40,7 +40,7 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}/test/python"
         },
         {
             "type": "lldb",
