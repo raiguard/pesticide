@@ -63,33 +63,51 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
             // User input
             Some(Ok(event)) = ui.input_stream.next() => {
                 #[allow(clippy::single_match)]
-                match ui.handle_input(event).await? {
+                match ui.handle_input(event)? {
+                    crate::ui::Order::StepIn => {
+                        adapter.send_request(Request::StepIn(StepInArgs {
+                            thread_id: state.current_thread,
+                            single_thread: true,
+                            target_id: None,
+                            granularity: SteppingGranularity::Line
+                        })).await?;
+                    },
                     crate::ui::Order::Quit => break,
                     _ => (),
                 };
             }
+            // TODO: Read stdout of child process to show in UI
         }
 
+        // TODO: Set a timeout for this
         ui.draw(&state)?;
     }
 
     error!("HOW DID WE GET HERE");
-    adapter.quit().await?;
     ui.destroy()?;
+    adapter.quit().await?;
 
     Ok(())
 }
 
 pub struct State {
-    threads: HashMap<u32, Thread>,
-    stack_frames: HashMap<u32, Vec<StackFrame>>,
-    scopes: HashMap<u32, Vec<Scope>>,
-    variables: HashMap<u32, Vec<Variable>>,
+    // The thread we are currently stopped on
+    pub current_thread: u32,
+    // The stack frame we are currently stopped on
+    pub current_stack_frame: u32,
+
+    pub threads: HashMap<u32, Thread>,
+    pub stack_frames: HashMap<u32, Vec<StackFrame>>,
+    pub scopes: HashMap<u32, Vec<Scope>>,
+    pub variables: HashMap<u32, Vec<Variable>>,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
+            current_thread: 0,
+            current_stack_frame: 0,
+
             threads: HashMap::new(),
             stack_frames: HashMap::new(),
             scopes: HashMap::new(),
@@ -126,30 +144,32 @@ async fn handle_event(
         Event::Stopped(event) => {
             info!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 
+            state.current_thread = event.thread_id;
+
             // Request threads.
             // This sets off a chain reaction of events to get all of the info
             // we need.
             adapter.send_request(Request::Threads).await?;
         }
         Event::Thread(event) => {
-            info!("New thread started: {}", event.thread_id);
-            match event.reason {
-                ThreadReason::Started => {
-                    state.threads.insert(
-                        event.thread_id,
-                        Thread {
-                            id: event.thread_id,
-                            // This will be replaced with the actual names in the Threads request
-                            name: format!("{}", event.thread_id),
-                        },
-                    );
-                }
-                ThreadReason::Exited => {
-                    if state.threads.remove(&event.thread_id).is_none() {
-                        error!("Thread {} ended, but had no stored data", event.thread_id)
-                    }
-                }
-            };
+            // info!("New thread started: {}", event.thread_id);
+            // match event.reason {
+            //     ThreadReason::Started => {
+            //         state.threads.insert(
+            //             event.thread_id,
+            //             Thread {
+            //                 id: event.thread_id,
+            //                 // This will be replaced with the actual names in the Threads request
+            //                 name: format!("{}", event.thread_id),
+            //             },
+            //         );
+            //     }
+            //     ThreadReason::Exited => {
+            //         if state.threads.remove(&event.thread_id).is_none() {
+            //             error!("Thread {} ended, but had no stored data", event.thread_id)
+            //         }
+            //     }
+            // };
         }
     };
 
@@ -265,6 +285,7 @@ async fn handle_response(
                         .await?;
                 }
 
+                state.current_stack_frame = res.stack_frames.iter().next().unwrap().id;
                 state.stack_frames.insert(req.thread_id, res.stack_frames);
             }
         }
@@ -297,12 +318,12 @@ async fn handle_response(
                     .insert(req.variables_reference, res.variables);
             }
 
-            if adapter.num_requests() == 0 {
-                info!("THREADS: {:#?}", state.threads);
-                info!("STACK FRAMES: {:#?}", state.stack_frames);
-                info!("SCOPES: {:#?}", state.scopes);
-                info!("VARIABLES: {:#?}", state.variables);
-            }
+            // if adapter.num_requests() == 0 {
+            //     info!("THREADS: {:#?}", state.threads);
+            //     info!("STACK FRAMES: {:#?}", state.stack_frames);
+            //     info!("SCOPES: {:#?}", state.scopes);
+            //     info!("VARIABLES: {:#?}", state.variables);
+            // }
         }
     };
 

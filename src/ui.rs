@@ -5,8 +5,10 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use std::io::Stdout;
+use std::path::{Path, PathBuf};
 use tui::backend::CrosstermBackend;
 use tui::style::{Color, Modifier, Style};
+use tui::text::{Span, Spans};
 use tui::widgets;
 use tui::widgets::{Borders, ListItem, ListState};
 
@@ -17,7 +19,7 @@ pub struct Ui {
 
     terminal: Terminal,
 
-    // State
+    // Source file
     file: Vec<String>,
     file_state: ListState,
     focused: FocusedWidget,
@@ -62,7 +64,7 @@ impl Ui {
         Ok(())
     }
 
-    pub async fn handle_input(&mut self, event: crossterm::event::Event) -> Result<Order> {
+    pub fn handle_input(&mut self, event: crossterm::event::Event) -> Result<Order> {
         match event {
             crossterm::event::Event::Key(event) => match event.code {
                 // Movement
@@ -88,9 +90,8 @@ impl Ui {
                         }
                     }
                 },
-                // TEMPORARY:
-                // KeyCode::Char('c') => socket.send("continue".to_string()).await?,
-                // KeyCode::Char('i') => socket.send("in".to_string()).await?,
+                // Adapter requests
+                KeyCode::Char('i') => return Ok(Order::StepIn),
                 // Quit
                 KeyCode::Char('q') => return Ok(Order::Quit),
                 _ => (),
@@ -102,27 +103,69 @@ impl Ui {
         Ok(Order::None)
     }
 
-    pub fn draw(&mut self, _state: &crate::controller::State) -> Result<()> {
+    pub fn draw(&mut self, state: &crate::controller::State) -> Result<()> {
         self.terminal.draw(|f| {
-            let num_width = format!("{}", self.file.len()).len();
-            // TODO: Store the file content as ListItems so we don't have to convert on every render
-            let lines: Vec<ListItem> = self
-                .file
-                .iter()
-                .enumerate()
-                .map(|(i, line)| format!("{:>width$}  {}", i + 1, line, width = num_width))
-                .map(ListItem::new)
-                .collect();
-            let file = widgets::List::new(lines)
-                .block(
-                    widgets::Block::default()
-                        .title(" Source file ")
-                        .borders(Borders::ALL)
-                        .style(Style::default().fg(Color::Green)),
-                )
-                .style(Style::default().fg(Color::White))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-            f.render_stateful_widget(file, f.size(), &mut self.file_state);
+            // Source file stuff
+            // let num_width = format!("{}", self.file.len()).len();
+            // // TODO: Store the file content as ListItems so we don't have to convert on every render
+            // let lines: Vec<ListItem> = self
+            //     .file
+            //     .iter()
+            //     .enumerate()
+            //     .map(|(i, line)| format!("{:>width$}  {}", i + 1, line, width = num_width))
+            //     .map(ListItem::new)
+            //     .collect();
+            // let file = widgets::List::new(lines)
+            //     .block(
+            //         widgets::Block::default()
+            //             .title(" Source file ")
+            //             .borders(Borders::ALL)
+            //             .style(Style::default().fg(Color::Green)),
+            //     )
+            //     .style(Style::default().fg(Color::White))
+            //     .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+            // f.render_stateful_widget(file, f.size(), &mut self.file_state);
+
+            // Stack frames
+            let mut stack_frames: Vec<ListItem> = vec![];
+            for (thread_id, thread) in &state.threads {
+                if let Some(frames) = state.stack_frames.get(thread_id) {
+                    stack_frames.push(ListItem::new(Spans::from(vec![Span::styled(
+                        thread.name.to_string(),
+                        Style::default().fg(Color::Blue),
+                    )])));
+
+                    for frame in frames {
+                        let mut line = vec![Span::raw(format!("  {:<20}", frame.name.clone()))];
+                        // Source info
+                        if let Some(source) = &frame.source {
+                            let name = if let Some(name) = &source.name {
+                                name.clone()
+                            } else if let Some(path) = &source.path {
+                                path.file_name()
+                                    .and_then(|name| name.to_str())
+                                    .map(|name| name.to_string())
+                                    .unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+                            line.push(Span::styled(
+                                format!("{}:{}:{}", name, frame.line, frame.column),
+                                Style::default().fg(Color::Cyan),
+                            ));
+                        }
+                        stack_frames.push(ListItem::new(Spans::from(line)));
+                    }
+                }
+            }
+
+            let stack_frames_list = widgets::List::new(stack_frames).block(
+                widgets::Block::default()
+                    .title("Call stack")
+                    .borders(Borders::ALL),
+            );
+
+            f.render_widget(stack_frames_list, f.size());
         })?;
 
         Ok(())
@@ -130,6 +173,8 @@ impl Ui {
 }
 
 pub enum Order {
+    StepIn,
+    Continue,
     None,
     Quit,
 }

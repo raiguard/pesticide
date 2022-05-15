@@ -1,3 +1,5 @@
+from threading import Thread
+
 class TestClass(object):
   def __init__(self, value):
     self._var = value
@@ -15,12 +17,22 @@ class TestClass(object):
 
     raise ValueError('Done')
 
-
-def Main():
+def task():
   t = TestClass(18)
 
   t._var = 99
   t.DoSomething()
+
+
+def Main():
+    thread_1 = Thread(target=task)
+    thread_2 = Thread(target=task)
+
+    thread_1.start()
+    thread_2.start()
+
+    thread_1.join()
+    thread_2.join()
 
 
 Main()
