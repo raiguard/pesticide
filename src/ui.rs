@@ -98,7 +98,7 @@ impl Ui {
                 _ => (),
             },
             crossterm::event::Event::Mouse(_) => (),
-            crossterm::event::Event::Resize(_, _) => (),
+            crossterm::event::Event::Resize(_, _) => return Ok(Some(Action::Redraw)),
         };
 
         Ok(None)
