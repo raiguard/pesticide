@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
 
     // Initialize logging
     simplelog::WriteLogger::init(
-        log::LevelFilter::Debug,
+        log::LevelFilter::Trace,
         simplelog::Config::default(),
         File::create(log)?,
     )?;

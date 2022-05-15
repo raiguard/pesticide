@@ -7,7 +7,7 @@ term_cmd = ["kitty", "--"]
 [launch_args]
 program = "${PWD}/test.py"
 args = []
-stopOnEntry = true
+stopOnEntry = false
 console = "integratedTerminal"
 debugOptions = []
 cwd = "${PWD}"

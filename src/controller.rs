@@ -15,10 +15,10 @@ use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
 pub async fn run(config_path: PathBuf) -> Result<()> {
     // Initialize state
     let mut state = State::new();
-    // // Initialize UI
-    // let mut ui = crate::ui::Ui::new().await?;
-    // // Draw with initial state
-    // ui.draw(&state)?;
+    // Initialize UI
+    let mut ui = crate::ui::Ui::new().await?;
+    // Draw with initial state
+    ui.draw(&state)?;
 
     // Channel to read debugee stdout through
     let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -72,17 +72,16 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
                 state.console.push(line);
                 action = Some(Action::Redraw);
             }
-            // // User input
-            // Some(Ok(event)) = ui.input_stream.next() => {
-            //     action = ui.handle_input(event)?
-            // }
-            // TODO: Read stdout of child process to show in UI
+            // User input
+            Some(Ok(event)) = ui.input_stream.next() => {
+                action = ui.handle_input(event)?
+            }
         }
 
         // Dispatch needed actions
         if let Some(order) = action {
             match order {
-                // Action::Redraw => ui.draw(&state)?,
+                Action::Redraw => ui.draw(&state)?,
                 Action::StepIn => {
                     adapter
                         .send_request(Request::StepIn(StepInArgs {
@@ -99,8 +98,8 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
         }
     }
 
-    error!("HOW DID WE GET HERE");
-    // ui.destroy()?;
+    trace!("Cleaning up");
+    ui.destroy()?;
     adapter.quit().await?;
 
     Ok(())
@@ -237,8 +236,8 @@ async fn handle_request(
             RunInTerminalKind::Integrated => Command::new(req.args[0].clone())
                 .args(req.args[1..].to_vec())
                 .stdin(Stdio::null())
+                .stderr(Stdio::null())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
                 .spawn(),
         }?;
 
@@ -257,18 +256,9 @@ async fn handle_request(
         if let RunInTerminalKind::Integrated = req.kind {
             // Send stdout to main loop
             let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
-            let stdout_tx = debugee_tx.clone();
             tokio::spawn(async move {
                 while let Some(Ok(line)) = stdout.next().await {
-                    stdout_tx.send((line, DebugeeOutputKind::Stdout)).unwrap();
-                }
-            });
-            // Send stderr to main loop
-            let mut stderr = FramedRead::new(child.stderr.take().unwrap(), LinesCodec::new());
-            let stderr_tx = debugee_tx.clone();
-            tokio::spawn(async move {
-                while let Some(Ok(line)) = stderr.next().await {
-                    stderr_tx.send((line, DebugeeOutputKind::Stderr)).unwrap();
+                    debugee_tx.send((line, DebugeeOutputKind::Stdout)).unwrap();
                 }
             });
         }
