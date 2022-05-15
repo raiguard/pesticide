@@ -327,10 +327,16 @@ async fn handle_response(
         }
         Response::StackTrace(res) => {
             if let Some(Request::StackTrace(req)) = req {
-                // Request scopes for topmost stack frame
-                if let Some(frame) = res.stack_frames.first() {
+                // Request scopes for current stack frame
+                if res
+                    .stack_frames
+                    .iter()
+                    .any(|frame| frame.id == state.current_stack_frame)
+                {
                     adapter
-                        .send_request(Request::Scopes(ScopesArgs { frame_id: frame.id }))
+                        .send_request(Request::Scopes(ScopesArgs {
+                            frame_id: state.current_stack_frame,
+                        }))
                         .await?;
                 }
                 // Add to state
