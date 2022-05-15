@@ -142,7 +142,7 @@ impl Ui {
                         })
                         .map(|reason| {
                             match reason {
-                                StoppedReason::Step => "Stopped on step",
+                                StoppedReason::Step => "Paused on step",
                                 StoppedReason::Breakpoint => "Paused on breakpoint",
                                 StoppedReason::Exception => "Paused on exception",
                                 StoppedReason::Pause => "Paused",
