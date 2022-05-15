@@ -286,10 +286,7 @@ impl Ui {
                                     Style::default().fg(Color::Green),
                                 ),
                                 Span::styled(
-                                    format!(
-                                        " {:<20}",
-                                        format!("{}|{}", frame.name.clone(), frame.id)
-                                    ),
+                                    format!(" {:<20}", frame.name),
                                     Style::default().fg(Color::White),
                                 ),
                             ];
