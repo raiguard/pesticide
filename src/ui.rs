@@ -7,6 +7,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use itertools::Itertools;
+use std::collections::HashSet;
 use std::io::Stdout;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -22,7 +23,8 @@ pub struct Ui {
 
     terminal: Terminal,
 
-    call_stack_state: ListStateWithData<CallStackItemKind>,
+    call_stack_list: ListStateWithData<CallStackItemKind>,
+    expanded_threads: HashSet<u32>,
 
     // Source file
     file: Vec<String>,
@@ -50,7 +52,8 @@ impl Ui {
             input_stream: EventStream::new(),
             terminal,
 
-            call_stack_state: ListStateWithData::new(),
+            call_stack_list: ListStateWithData::new(),
+            expanded_threads: HashSet::new(),
 
             file: lines,
             file_state: state,
@@ -80,9 +83,15 @@ impl Ui {
             crossterm::event::Event::Key(event) => match event.code {
                 KeyCode::Char(' ') => match self.focused {
                     FocusedWidget::CallStack => {
-                        if let Some(focused_line) = self.call_stack_state.selected_item() {
+                        if let Some(focused_line) = self.call_stack_list.selected_item() {
                             match focused_line {
-                                CallStackItemKind::Thread(_) => todo!(),
+                                CallStackItemKind::Thread(thread_id) => {
+                                    if self.expanded_threads.contains(thread_id) {
+                                        self.expanded_threads.remove(thread_id);
+                                    } else {
+                                        self.expanded_threads.insert(*thread_id);
+                                    }
+                                }
                                 CallStackItemKind::StackFrame(thread_id, frame_id) => {
                                     state.current_thread = *thread_id;
                                     state.current_stack_frame = *frame_id
@@ -96,23 +105,22 @@ impl Ui {
                 // Movement
                 KeyCode::Char('g') => match self.focused {
                     FocusedWidget::CallStack => {
-                        self.call_stack_state.select(0);
+                        self.call_stack_list.select(0);
                         return Ok(Some(Action::Redraw));
                     }
                     FocusedWidget::SourceFile => self.file_state.select(Some(0)),
                 },
                 KeyCode::Char('G') => match self.focused {
                     FocusedWidget::CallStack => {
-                        self.call_stack_state
-                            .select(self.call_stack_state.len() - 1);
+                        self.call_stack_list.select(self.call_stack_list.len() - 1);
                         return Ok(Some(Action::Redraw));
                     }
                     FocusedWidget::SourceFile => self.file_state.select(Some(self.file.len() - 1)),
                 },
                 KeyCode::Char('j') => match self.focused {
                     FocusedWidget::CallStack => {
-                        if let Some(i) = self.call_stack_state.selected() {
-                            self.call_stack_state.select(i + 1);
+                        if let Some(i) = self.call_stack_list.selected() {
+                            self.call_stack_list.select(i + 1);
                             return Ok(Some(Action::Redraw));
                         }
                     }
@@ -125,9 +133,9 @@ impl Ui {
                 },
                 KeyCode::Char('k') => match self.focused {
                     FocusedWidget::CallStack => {
-                        if let Some(i) = self.call_stack_state.selected() {
+                        if let Some(i) = self.call_stack_list.selected() {
                             if i > 0 {
-                                self.call_stack_state.select(i - 1);
+                                self.call_stack_list.select(i - 1);
                                 return Ok(Some(Action::Redraw));
                             }
                         }
@@ -235,53 +243,64 @@ impl Ui {
                         .unwrap_or_else(|| String::from("Running"));
                     stack_frames.push(ListItem::new(Spans::from(vec![
                         Span::styled(
-                            format!("▼ {:<20}", thread.name),
+                            format!(
+                                "{} {:<20}",
+                                if self.expanded_threads.contains(&thread.id) {
+                                    "▼"
+                                } else {
+                                    "▶"
+                                },
+                                thread.name
+                            ),
                             Style::default().fg(Color::Blue),
                         ),
                         Span::styled(reason.to_string(), Style::default().fg(Color::White)),
                     ])));
                     stacktrace_list.push(CallStackItemKind::Thread(thread.id));
 
-                    // Stack frames within thread
-                    for frame in frames {
-                        let mut line = vec![
-                            Span::styled(
-                                if state.current_stack_frame == frame.id {
-                                    "*"
+                    if self.expanded_threads.contains(&thread.id) {
+                        // Stack frames within thread
+                        for frame in frames {
+                            let mut line = vec![
+                                Span::styled(
+                                    if state.current_stack_frame == frame.id {
+                                        "*"
+                                    } else {
+                                        " "
+                                    }
+                                    .to_string(),
+                                    Style::default().fg(Color::Green),
+                                ),
+                                Span::styled(
+                                    format!(" {:<20}", frame.name.clone()),
+                                    Style::default().fg(Color::White),
+                                ),
+                            ];
+                            // Source info
+                            if let Some(source) = &frame.source {
+                                let name = if let Some(name) = &source.name {
+                                    name.clone()
+                                } else if let Some(path) = &source.path {
+                                    path.file_name()
+                                        .and_then(|name| name.to_str())
+                                        .map(|name| name.to_string())
+                                        .unwrap_or_default()
                                 } else {
-                                    " "
-                                }
-                                .to_string(),
-                                Style::default().fg(Color::Green),
-                            ),
-                            Span::styled(
-                                format!(" {:<20}", frame.name.clone()),
-                                Style::default().fg(Color::White),
-                            ),
-                        ];
-                        // Source info
-                        if let Some(source) = &frame.source {
-                            let name = if let Some(name) = &source.name {
-                                name.clone()
-                            } else if let Some(path) = &source.path {
-                                path.file_name()
-                                    .and_then(|name| name.to_str())
-                                    .map(|name| name.to_string())
-                                    .unwrap_or_default()
-                            } else {
-                                String::new()
-                            };
-                            line.push(Span::styled(
-                                format!("{}:{}:{}", name, frame.line, frame.column),
-                                Style::default().fg(Color::Cyan),
-                            ));
+                                    String::new()
+                                };
+                                line.push(Span::styled(
+                                    format!("{}:{}:{}", name, frame.line, frame.column),
+                                    Style::default().fg(Color::Cyan),
+                                ));
+                            }
+                            stack_frames.push(ListItem::new(Spans::from(line)));
+                            stacktrace_list
+                                .push(CallStackItemKind::StackFrame(thread.id, frame.id));
                         }
-                        stack_frames.push(ListItem::new(Spans::from(line)));
-                        stacktrace_list.push(CallStackItemKind::StackFrame(thread.id, frame.id));
                     }
                 }
             }
-            self.call_stack_state.update_items(stacktrace_list);
+            self.call_stack_list.update_items(stacktrace_list);
             let stack_frames_list = List::new(stack_frames)
                 .block(
                     Block::default()
@@ -299,7 +318,7 @@ impl Ui {
             f.render_stateful_widget(
                 stack_frames_list,
                 chunks[2],
-                self.call_stack_state.get_internal_state(),
+                self.call_stack_list.get_internal_state(),
             );
 
             // Breakpoints
