@@ -6,12 +6,13 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
+use itertools::Itertools;
 use std::io::Stdout;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Direction, Layout};
-use tui::style::{Color, Style};
+use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
-use tui::widgets;
+use tui::widgets::{self, Block, List};
 use tui::widgets::{Borders, ListItem, ListState};
 
 pub type Terminal = tui::Terminal<CrosstermBackend<Stdout>>;
@@ -20,6 +21,8 @@ pub struct Ui {
     pub input_stream: EventStream,
 
     terminal: Terminal,
+
+    call_stack_state: ListStateWithData<CallStackItemKind>,
 
     // Source file
     file: Vec<String>,
@@ -47,9 +50,11 @@ impl Ui {
             input_stream: EventStream::new(),
             terminal,
 
+            call_stack_state: ListStateWithData::new(),
+
             file: lines,
             file_state: state,
-            focused: FocusedWidget::SourceFile,
+            focused: FocusedWidget::CallStack,
         })
     }
 
@@ -66,17 +71,51 @@ impl Ui {
         Ok(())
     }
 
-    pub fn handle_input(&mut self, event: crossterm::event::Event) -> Result<Option<Action>> {
+    pub fn handle_input(
+        &mut self,
+        state: &mut crate::controller::State,
+        event: crossterm::event::Event,
+    ) -> Result<Option<Action>> {
         match event {
             crossterm::event::Event::Key(event) => match event.code {
+                KeyCode::Char(' ') => match self.focused {
+                    FocusedWidget::CallStack => {
+                        if let Some(focused_line) = self.call_stack_state.selected_item() {
+                            match focused_line {
+                                CallStackItemKind::Thread(_) => todo!(),
+                                CallStackItemKind::StackFrame(thread_id, frame_id) => {
+                                    state.current_thread = *thread_id;
+                                    state.current_stack_frame = *frame_id
+                                }
+                            }
+                            return Ok(Some(Action::Redraw));
+                        }
+                    }
+                    FocusedWidget::SourceFile => todo!(),
+                },
                 // Movement
                 KeyCode::Char('g') => match self.focused {
+                    FocusedWidget::CallStack => {
+                        self.call_stack_state.select(0);
+                        return Ok(Some(Action::Redraw));
+                    }
                     FocusedWidget::SourceFile => self.file_state.select(Some(0)),
                 },
                 KeyCode::Char('G') => match self.focused {
+                    FocusedWidget::CallStack => {
+                        self.call_stack_state
+                            .select(self.call_stack_state.len() - 1);
+                        return Ok(Some(Action::Redraw));
+                    }
                     FocusedWidget::SourceFile => self.file_state.select(Some(self.file.len() - 1)),
                 },
                 KeyCode::Char('j') => match self.focused {
+                    FocusedWidget::CallStack => {
+                        if let Some(i) = self.call_stack_state.selected() {
+                            self.call_stack_state.select(i + 1);
+                            return Ok(Some(Action::Redraw));
+                        }
+                    }
                     FocusedWidget::SourceFile => {
                         let selected = self.file_state.selected().unwrap();
                         if selected < self.file.len() - 1 {
@@ -85,6 +124,14 @@ impl Ui {
                     }
                 },
                 KeyCode::Char('k') => match self.focused {
+                    FocusedWidget::CallStack => {
+                        if let Some(i) = self.call_stack_state.selected() {
+                            if i > 0 {
+                                self.call_stack_state.select(i - 1);
+                                return Ok(Some(Action::Redraw));
+                            }
+                        }
+                    }
                     FocusedWidget::SourceFile => {
                         let selected = self.file_state.selected().unwrap();
                         if selected > 0 {
@@ -131,11 +178,31 @@ impl Ui {
             // Layout
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
+                .constraints(
+                    [
+                        Constraint::Percentage(40),
+                        Constraint::Percentage(40),
+                        Constraint::Min(10),
+                        Constraint::Length(3),
+                    ]
+                    .as_ref(),
+                )
                 .split(f.size());
+
+            // Variables
+            f.render_widget(
+                Block::default().title("Variables").borders(Borders::ALL),
+                chunks[0],
+            );
+            // Watches
+            f.render_widget(
+                Block::default().title("Watch").borders(Borders::ALL),
+                chunks[1],
+            );
 
             // Stack frames
             let mut stack_frames: Vec<ListItem> = vec![];
+            let mut stacktrace_list = vec![];
             for thread in &state.threads {
                 if let Some(frames) = state.stack_frames.get(&thread.id) {
                     // Thread header
@@ -173,10 +240,25 @@ impl Ui {
                         ),
                         Span::styled(reason.to_string(), Style::default().fg(Color::White)),
                     ])));
+                    stacktrace_list.push(CallStackItemKind::Thread(thread.id));
 
                     // Stack frames within thread
                     for frame in frames {
-                        let mut line = vec![Span::raw(format!("  {:<20}", frame.name.clone()))];
+                        let mut line = vec![
+                            Span::styled(
+                                if state.current_stack_frame == frame.id {
+                                    "*"
+                                } else {
+                                    " "
+                                }
+                                .to_string(),
+                                Style::default().fg(Color::Green),
+                            ),
+                            Span::styled(
+                                format!(" {:<20}", frame.name.clone()),
+                                Style::default().fg(Color::White),
+                            ),
+                        ];
                         // Source info
                         if let Some(source) = &frame.source {
                             let name = if let Some(name) = &source.name {
@@ -195,15 +277,36 @@ impl Ui {
                             ));
                         }
                         stack_frames.push(ListItem::new(Spans::from(line)));
+                        stacktrace_list.push(CallStackItemKind::StackFrame(thread.id, frame.id));
                     }
                 }
             }
-            let stack_frames_list = widgets::List::new(stack_frames).block(
-                widgets::Block::default()
-                    .title("Call stack")
-                    .borders(Borders::ALL),
+            self.call_stack_state.update_items(stacktrace_list);
+            let stack_frames_list = List::new(stack_frames)
+                .block(
+                    Block::default()
+                        .title("Call stack")
+                        .borders(Borders::ALL)
+                        .style(Style::default().fg(
+                            if let FocusedWidget::CallStack = self.focused {
+                                Color::Green
+                            } else {
+                                Color::White
+                            },
+                        )),
+                )
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+            f.render_stateful_widget(
+                stack_frames_list,
+                chunks[2],
+                self.call_stack_state.get_internal_state(),
             );
-            f.render_widget(stack_frames_list, chunks[0]);
+
+            // Breakpoints
+            f.render_widget(
+                Block::default().title("Breakpoints").borders(Borders::ALL),
+                chunks[3],
+            );
 
             // // Debugee console
             // let console_list = widgets::List::new(
@@ -228,9 +331,89 @@ impl Ui {
 
 enum FocusedWidget {
     // Breakpoints,
-    // CallStack,
+    CallStack,
     // DebugConsole,
     SourceFile,
     // Variables,
     // Watch,
+}
+
+#[derive(PartialEq)]
+enum CallStackItemKind {
+    // Thread ID
+    Thread(u32),
+    // Thread ID and stack frame ID
+    StackFrame(u32, u32),
+}
+
+/// Wrapper for `ListState` that contains associated data.
+///
+/// The default `ListState` does not associate with the data in the list. This
+/// wrapper stores the state and representations of the data in each line.
+///
+/// Intended use is for the stored data to "point to" the actual data. For
+/// example, store a list of `usize` that correspond to variables references,
+/// instead of storing the actual variables references.
+struct ListStateWithData<T> {
+    items: Vec<T>,
+    state: ListState,
+}
+
+impl<T: PartialEq> ListStateWithData<T> {
+    fn new() -> Self {
+        Self {
+            items: vec![],
+            state: ListState::default(),
+        }
+    }
+
+    /// Get the internal state object, for use with `render_stateful_widget`.
+    fn get_internal_state(&mut self) -> &mut ListState {
+        &mut self.state
+    }
+
+    /// The length of the stored data.
+    fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Select the given index, if it exists.
+    fn select(&mut self, i: usize) {
+        if self.items.get(i).is_some() {
+            self.state.select(Some(i));
+        }
+    }
+
+    /// Get the currently selected index.
+    fn selected(&self) -> Option<usize> {
+        self.state.selected()
+    }
+
+    /// Select the given item, if it exists in the items list.
+    fn select_item(&mut self, item: T) {
+        if let Some(i) = self
+            .items
+            .iter()
+            .find_position(|stored| **stored == item)
+            .map(|(i, _)| i)
+        {
+            self.state.select(Some(i));
+        }
+    }
+
+    /// Get the currently selected item, if any.
+    fn selected_item(&self) -> Option<&T> {
+        self.state.selected().and_then(|i| self.items.get(i))
+    }
+
+    /// Update stored data and ensure the selected index is valid.
+    fn update_items(&mut self, items: Vec<T>) {
+        self.items = items;
+        self.state
+            .select(match (self.items.len(), self.state.selected()) {
+                (0, _) => None,
+                (_, None) => Some(0),
+                (len, Some(i)) => Some(std::cmp::min(len - 1, i)),
+            });
+    }
 }

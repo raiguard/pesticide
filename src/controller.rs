@@ -1,7 +1,7 @@
 use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap_types::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
+use tokio_util::codec::{FramedRead, LinesCodec};
 
 pub async fn run(config_path: PathBuf) -> Result<()> {
     // Initialize state
@@ -68,13 +68,13 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
                 }
             }
             // Debugee stdout
-            Some((line, kind)) = debugee_rx.recv() => {
+            Some(line) = debugee_rx.recv() => {
                 state.console.push(line);
                 action = Some(Action::Redraw);
             }
             // User input
             Some(Ok(event)) = ui.input_stream.next() => {
-                action = ui.handle_input(event)?
+                action = ui.handle_input(&mut state, event)?
             }
         }
 
@@ -221,7 +221,7 @@ async fn handle_event(
 async fn handle_request(
     adapter: &mut Adapter,
     payload: RequestPayload,
-    debugee_tx: UnboundedSender<(String, DebugeeOutputKind)>,
+    debugee_tx: UnboundedSender<String>,
 ) -> Result<Option<Action>> {
     adapter.update_seq(payload.seq);
 
@@ -257,22 +257,22 @@ async fn handle_request(
 
         if let RunInTerminalKind::Integrated = req.kind {
             // Send stdout to main loop
-            let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
+            let mut stdout = FramedRead::new(
+                child
+                    .stdout
+                    .take()
+                    .ok_or_else(|| anyhow!("Failed to take debugee stdout"))?,
+                LinesCodec::new(),
+            );
             tokio::spawn(async move {
                 while let Some(Ok(line)) = stdout.next().await {
-                    debugee_tx.send((line, DebugeeOutputKind::Stdout)).unwrap();
+                    debugee_tx.send(line).unwrap();
                 }
             });
         }
     };
 
     Ok(None)
-}
-
-#[derive(Debug)]
-enum DebugeeOutputKind {
-    Stdout,
-    Stderr,
 }
 
 async fn handle_response(
