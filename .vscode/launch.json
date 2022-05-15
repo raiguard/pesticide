@@ -5,6 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Lua",
+            "type": "lua",
+            "request": "launch",
+            "stopOnEntry": true,
+            "program": "${workspaceFolder}/test/lua/test.lua",
+            "cwd": "${workspaceFolder}/test/lua",
+            "path": "${workspaceFolder}/?.lua",
+            "cpath": "${workspaceFolder}/?.dll",
+            "arg": [],
+            "consoleCoding": "utf8"
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
