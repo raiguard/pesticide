@@ -94,12 +94,12 @@ pub enum Event {
 #[serde(rename_all = "camelCase")]
 pub struct ContinuedBody {
     /// The thread which was continued.
-    thread_id: u32,
+    pub thread_id: u32,
 
     /// If 'allThreadsContinued' is true, a debug adapter can announce that all
     /// threads have continued.
     #[serde(default)]
-    all_threads_continued: bool,
+    pub all_threads_continued: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

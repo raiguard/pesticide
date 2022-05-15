@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::dap_types::*;
 use anyhow::Result;
 use futures_util::StreamExt;
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -14,6 +15,8 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
     let mut state = State::new();
     // Initialize UI
     let mut ui = crate::ui::Ui::new().await?;
+    // Draw with initial state
+    ui.draw(&state)?;
 
     // Spin up debug adapter
     let mut adapter = Adapter::new(Config::new(config_path)?)?;
@@ -38,20 +41,19 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
         }))
         .await?;
 
-    ui.draw(&state)?;
-
-    // Main loop - act on async messages
     loop {
+        // Act on incoming messages
+        let mut action = None;
         select! {
             // Incoming debug adapter messages
             res = adapter.read() => {
                 match res {
                     Ok(Some(msg)) => {
-                        match msg {
+                        action = match msg {
                             AdapterMessage::Event(payload) => handle_event(&mut state, &mut adapter, payload).await?,
                             AdapterMessage::Request(payload) => handle_request(&mut adapter, payload).await?,
                             AdapterMessage::Response(payload) => handle_response(&mut state, &mut adapter, payload).await?,
-                        }
+                        };
                     },
                     Ok(None) => {
                         info!("Debug adapter shut down, ending session");
@@ -62,25 +64,29 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
             }
             // User input
             Some(Ok(event)) = ui.input_stream.next() => {
-                #[allow(clippy::single_match)]
-                match ui.handle_input(event)? {
-                    crate::ui::Order::StepIn => {
-                        adapter.send_request(Request::StepIn(StepInArgs {
-                            thread_id: state.current_thread,
-                            single_thread: true,
-                            target_id: None,
-                            granularity: SteppingGranularity::Line
-                        })).await?;
-                    },
-                    crate::ui::Order::Quit => break,
-                    _ => (),
-                };
+                action = ui.handle_input(event)?
             }
             // TODO: Read stdout of child process to show in UI
         }
 
-        // TODO: Set a timeout for this
-        ui.draw(&state)?;
+        // Dispatch needed actions
+        if let Some(order) = action {
+            match order {
+                Action::Redraw => ui.draw(&state)?,
+                Action::StepIn => {
+                    adapter
+                        .send_request(Request::StepIn(StepInArgs {
+                            thread_id: state.current_thread,
+                            single_thread: true,
+                            target_id: None,
+                            granularity: SteppingGranularity::Line,
+                        }))
+                        .await?;
+                }
+                Action::Quit => break,
+                _ => (),
+            };
+        }
     }
 
     error!("HOW DID WE GET HERE");
@@ -91,12 +97,16 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
 }
 
 pub struct State {
-    // The thread we are currently stopped on
+    /// The thread we are currently stopped on
     pub current_thread: u32,
-    // The stack frame we are currently stopped on
+    /// The stack frame we are currently stopped on
     pub current_stack_frame: u32,
+    /// Known stopped threads
+    /// Any threads that were stopped that we didn't get explicitly will be marked as "paused"
+    pub stopped_threads: HashMap<u32, StoppedReason>,
+    pub all_threads_stopped: bool,
 
-    pub threads: HashMap<u32, Thread>,
+    pub threads: Vec<Thread>,
     pub stack_frames: HashMap<u32, Vec<StackFrame>>,
     pub scopes: HashMap<u32, Vec<Scope>>,
     pub variables: HashMap<u32, Vec<Variable>>,
@@ -107,8 +117,10 @@ impl State {
         Self {
             current_thread: 0,
             current_stack_frame: 0,
+            stopped_threads: HashMap::new(),
+            all_threads_stopped: false,
 
-            threads: HashMap::new(),
+            threads: vec![],
             stack_frames: HashMap::new(),
             scopes: HashMap::new(),
             variables: HashMap::new(),
@@ -116,19 +128,30 @@ impl State {
     }
 }
 
+pub enum Action {
+    Continue,
+    Quit,
+    Redraw,
+    StepIn,
+}
+
 async fn handle_event(
     state: &mut State,
     adapter: &mut Adapter,
     payload: EventPayload,
-) -> Result<()> {
+) -> Result<Option<Action>> {
     adapter.update_seq(payload.seq);
 
     match payload.event {
-        Event::Continued(_) => {
-            info!("Continuing");
+        Event::Continued(event) => {
+            if event.all_threads_continued {
+                state.stopped_threads.clear();
+            } else {
+                state.stopped_threads.remove(&event.thread_id);
+            }
         }
         Event::Exited(_) => {
-            // state.broadcast("quit".to_string()).await?;
+            return Ok(Some(Action::Quit));
         }
         Event::Module(_) => (), // TODO:
         Event::Output(event) => match event.category {
@@ -145,6 +168,8 @@ async fn handle_event(
             info!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
 
             state.current_thread = event.thread_id;
+            state.stopped_threads.insert(event.thread_id, event.reason);
+            state.all_threads_stopped = event.all_threads_stopped;
 
             // Request threads.
             // This sets off a chain reaction of events to get all of the info
@@ -152,31 +177,35 @@ async fn handle_event(
             adapter.send_request(Request::Threads).await?;
         }
         Event::Thread(event) => {
-            // info!("New thread started: {}", event.thread_id);
-            // match event.reason {
-            //     ThreadReason::Started => {
-            //         state.threads.insert(
-            //             event.thread_id,
-            //             Thread {
-            //                 id: event.thread_id,
-            //                 // This will be replaced with the actual names in the Threads request
-            //                 name: format!("{}", event.thread_id),
-            //             },
-            //         );
-            //     }
-            //     ThreadReason::Exited => {
-            //         if state.threads.remove(&event.thread_id).is_none() {
-            //             error!("Thread {} ended, but had no stored data", event.thread_id)
-            //         }
-            //     }
-            // };
+            info!("New thread started: {}", event.thread_id);
+            match event.reason {
+                ThreadReason::Started => {
+                    state.threads.push(Thread {
+                        id: event.thread_id,
+                        // This will be replaced with the actual names in the Threads request
+                        name: format!("{}", event.thread_id),
+                    });
+                }
+                ThreadReason::Exited => {
+                    if let Some((i, _)) = state
+                        .threads
+                        .iter()
+                        .find_position(|thread| thread.id == event.thread_id)
+                    {
+                        state.threads.remove(i);
+                        state.stopped_threads.remove(&(i as u32));
+                    }
+                }
+            };
+
+            return Ok(Some(Action::Redraw));
         }
     };
 
-    Ok(())
+    Ok(None)
 }
 
-async fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<()> {
+async fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<Option<Action>> {
     adapter.update_seq(payload.seq);
 
     // The only "reverse request" in the DAP is RunInTerminal
@@ -216,14 +245,14 @@ async fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Resul
             .await?;
     };
 
-    Ok(())
+    Ok(None)
 }
 
 async fn handle_response(
     state: &mut State,
     adapter: &mut Adapter,
     payload: ResponsePayload,
-) -> Result<()> {
+) -> Result<Option<Action>> {
     adapter.update_seq(payload.seq);
 
     // Get the request that triggered this response
@@ -285,7 +314,7 @@ async fn handle_response(
                         .await?;
                 }
 
-                state.current_stack_frame = res.stack_frames.iter().next().unwrap().id;
+                state.current_stack_frame = res.stack_frames.get(0).unwrap().id;
                 state.stack_frames.insert(req.thread_id, res.stack_frames);
             }
         }
@@ -293,11 +322,7 @@ async fn handle_response(
         Response::Threads(res) => {
             // Update the stored threads
             let threads = &res.threads;
-            state.threads = threads
-                .iter()
-                .cloned()
-                .map(|thread| (thread.id, thread))
-                .collect();
+            state.threads = threads.clone();
 
             // Request stack frames for each thread
             for thread in threads {
@@ -318,14 +343,11 @@ async fn handle_response(
                     .insert(req.variables_reference, res.variables);
             }
 
-            // if adapter.num_requests() == 0 {
-            //     info!("THREADS: {:#?}", state.threads);
-            //     info!("STACK FRAMES: {:#?}", state.stack_frames);
-            //     info!("SCOPES: {:#?}", state.scopes);
-            //     info!("VARIABLES: {:#?}", state.variables);
-            // }
+            if adapter.num_requests() == 0 {
+                return Ok(Some(Action::Redraw));
+            }
         }
     };
 
-    Ok(())
+    Ok(None)
 }

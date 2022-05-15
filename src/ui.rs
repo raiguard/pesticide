@@ -1,3 +1,5 @@
+use crate::controller::Action;
+use crate::dap_types::*;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
 use crossterm::execute;
@@ -5,9 +7,8 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use std::io::Stdout;
-use std::path::{Path, PathBuf};
 use tui::backend::CrosstermBackend;
-use tui::style::{Color, Modifier, Style};
+use tui::style::{Color, Style};
 use tui::text::{Span, Spans};
 use tui::widgets;
 use tui::widgets::{Borders, ListItem, ListState};
@@ -64,7 +65,7 @@ impl Ui {
         Ok(())
     }
 
-    pub fn handle_input(&mut self, event: crossterm::event::Event) -> Result<Order> {
+    pub fn handle_input(&mut self, event: crossterm::event::Event) -> Result<Option<Action>> {
         match event {
             crossterm::event::Event::Key(event) => match event.code {
                 // Movement
@@ -91,16 +92,16 @@ impl Ui {
                     }
                 },
                 // Adapter requests
-                KeyCode::Char('i') => return Ok(Order::StepIn),
+                KeyCode::Char('i') => return Ok(Some(Action::StepIn)),
                 // Quit
-                KeyCode::Char('q') => return Ok(Order::Quit),
+                KeyCode::Char('q') => return Ok(Some(Action::Quit)),
                 _ => (),
             },
             crossterm::event::Event::Mouse(_) => (),
             crossterm::event::Event::Resize(_, _) => (),
         };
 
-        Ok(Order::None)
+        Ok(None)
     }
 
     pub fn draw(&mut self, state: &crate::controller::State) -> Result<()> {
@@ -128,13 +129,45 @@ impl Ui {
 
             // Stack frames
             let mut stack_frames: Vec<ListItem> = vec![];
-            for (thread_id, thread) in &state.threads {
-                if let Some(frames) = state.stack_frames.get(thread_id) {
-                    stack_frames.push(ListItem::new(Spans::from(vec![Span::styled(
-                        thread.name.to_string(),
-                        Style::default().fg(Color::Blue),
-                    )])));
+            for thread in &state.threads {
+                if let Some(frames) = state.stack_frames.get(&thread.id) {
+                    // Thread header
+                    let reason = state
+                        .stopped_threads
+                        .get(&thread.id)
+                        .or(if state.all_threads_stopped {
+                            Some(&StoppedReason::Pause)
+                        } else {
+                            None
+                        })
+                        .map(|reason| {
+                            match reason {
+                                StoppedReason::Step => "Stopped on step",
+                                StoppedReason::Breakpoint => "Paused on breakpoint",
+                                StoppedReason::Exception => "Paused on exception",
+                                StoppedReason::Pause => "Paused",
+                                StoppedReason::Entry => "Paused on entry",
+                                StoppedReason::Goto => "Paused on goto",
+                                StoppedReason::FunctionBreakpoint => {
+                                    "Paused on function breakpoint"
+                                }
+                                StoppedReason::DataBreakpoint => "Paused on data breakpoint",
+                                StoppedReason::InstructionBreakpoint => {
+                                    "Paused on instruction breakpoint"
+                                }
+                            }
+                            .to_string()
+                        })
+                        .unwrap_or_else(|| String::from("Running"));
+                    stack_frames.push(ListItem::new(Spans::from(vec![
+                        Span::styled(
+                            format!("{:<22}", thread.name),
+                            Style::default().fg(Color::Blue),
+                        ),
+                        Span::styled(reason.to_string(), Style::default().fg(Color::White)),
+                    ])));
 
+                    // Stack frames within thread
                     for frame in frames {
                         let mut line = vec![Span::raw(format!("  {:<20}", frame.name.clone()))];
                         // Source info
@@ -170,13 +203,6 @@ impl Ui {
 
         Ok(())
     }
-}
-
-pub enum Order {
-    StepIn,
-    Continue,
-    None,
-    Quit,
 }
 
 enum FocusedWidget {
