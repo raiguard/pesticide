@@ -9,14 +9,19 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
 use tokio::select;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
 
 pub async fn run(config_path: PathBuf) -> Result<()> {
     // Initialize state
     let mut state = State::new();
-    // Initialize UI
-    let mut ui = crate::ui::Ui::new().await?;
-    // Draw with initial state
-    ui.draw(&state)?;
+    // // Initialize UI
+    // let mut ui = crate::ui::Ui::new().await?;
+    // // Draw with initial state
+    // ui.draw(&state)?;
+
+    // Channel to read debugee stdout through
+    let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Spin up debug adapter
     let mut adapter = Adapter::new(Config::new(config_path)?)?;
@@ -51,7 +56,7 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
                     Ok(Some(msg)) => {
                         action = match msg {
                             AdapterMessage::Event(payload) => handle_event(&mut state, &mut adapter, payload).await?,
-                            AdapterMessage::Request(payload) => handle_request(&mut adapter, payload).await?,
+                            AdapterMessage::Request(payload) => handle_request(&mut adapter, payload, debugee_tx.clone()).await?,
                             AdapterMessage::Response(payload) => handle_response(&mut state, &mut adapter, payload).await?,
                         };
                     },
@@ -62,17 +67,22 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
                     Err(e) => error!("{}", e)
                 }
             }
-            // User input
-            Some(Ok(event)) = ui.input_stream.next() => {
-                action = ui.handle_input(event)?
+            // Debugee stdout
+            Some((line, kind)) = debugee_rx.recv() => {
+                state.console.push(line);
+                action = Some(Action::Redraw);
             }
+            // // User input
+            // Some(Ok(event)) = ui.input_stream.next() => {
+            //     action = ui.handle_input(event)?
+            // }
             // TODO: Read stdout of child process to show in UI
         }
 
         // Dispatch needed actions
         if let Some(order) = action {
             match order {
-                Action::Redraw => ui.draw(&state)?,
+                // Action::Redraw => ui.draw(&state)?,
                 Action::StepIn => {
                     adapter
                         .send_request(Request::StepIn(StepInArgs {
@@ -90,7 +100,7 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
     }
 
     error!("HOW DID WE GET HERE");
-    ui.destroy()?;
+    // ui.destroy()?;
     adapter.quit().await?;
 
     Ok(())
@@ -106,6 +116,8 @@ pub struct State {
     pub stopped_threads: HashMap<u32, StoppedReason>,
     pub all_threads_stopped: bool,
 
+    pub console: Vec<String>,
+
     pub threads: Vec<Thread>,
     pub stack_frames: HashMap<u32, Vec<StackFrame>>,
     pub scopes: HashMap<u32, Vec<Scope>>,
@@ -119,6 +131,8 @@ impl State {
             current_stack_frame: 0,
             stopped_threads: HashMap::new(),
             all_threads_stopped: false,
+
+            console: vec![],
 
             threads: vec![],
             stack_frames: HashMap::new(),
@@ -205,47 +219,68 @@ async fn handle_event(
     Ok(None)
 }
 
-async fn handle_request(adapter: &mut Adapter, payload: RequestPayload) -> Result<Option<Action>> {
+async fn handle_request(
+    adapter: &mut Adapter,
+    payload: RequestPayload,
+    debugee_tx: UnboundedSender<(String, DebugeeOutputKind)>,
+) -> Result<Option<Action>> {
     adapter.update_seq(payload.seq);
 
     // The only "reverse request" in the DAP is RunInTerminal
     if let Request::RunInTerminal(mut req) = payload.request {
-        let cmd = match req.kind {
+        let mut child = match req.kind {
             RunInTerminalKind::External => {
-                let mut term_cmd = adapter.config.term_cmd.clone();
-                term_cmd.append(&mut req.args);
-                term_cmd
+                let mut cmd = adapter.config.term_cmd.clone();
+                cmd.append(&mut req.args);
+                Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn()
             }
-            RunInTerminalKind::Integrated => req.args,
-        };
-
-        let cmd = Command::new(cmd[0].clone())
-            .args(cmd[1..].to_vec())
-            .stdin(Stdio::null()) // So we can still ctrl+c the server
-            .spawn();
-
-        let (success, message) = match &cmd {
-            Ok(_) => (true, None),
-            Err(e) => {
-                error!("Could not start debugee: {}", e);
-                (false, Some(e.to_string()))
-            }
-        };
+            RunInTerminalKind::Integrated => Command::new(req.args[0].clone())
+                .args(req.args[1..].to_vec())
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn(),
+        }?;
 
         adapter
             .send_response(
                 payload.seq,
-                success,
-                message,
+                true,
+                None,
                 Response::RunInTerminal(RunInTerminalResponse {
-                    process_id: cmd.ok().and_then(|child| child.id()),
-                    shell_process_id: None, // TEMPORARY:
+                    process_id: child.id(),
+                    shell_process_id: None,
                 }),
             )
             .await?;
+
+        if let RunInTerminalKind::Integrated = req.kind {
+            // Send stdout to main loop
+            let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
+            let stdout_tx = debugee_tx.clone();
+            tokio::spawn(async move {
+                while let Some(Ok(line)) = stdout.next().await {
+                    stdout_tx.send((line, DebugeeOutputKind::Stdout)).unwrap();
+                }
+            });
+            // Send stderr to main loop
+            let mut stderr = FramedRead::new(child.stderr.take().unwrap(), LinesCodec::new());
+            let stderr_tx = debugee_tx.clone();
+            tokio::spawn(async move {
+                while let Some(Ok(line)) = stderr.next().await {
+                    stderr_tx.send((line, DebugeeOutputKind::Stderr)).unwrap();
+                }
+            });
+        }
     };
 
     Ok(None)
+}
+
+#[derive(Debug)]
+enum DebugeeOutputKind {
+    Stdout,
+    Stderr,
 }
 
 async fn handle_response(

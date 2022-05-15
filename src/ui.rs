@@ -8,6 +8,7 @@ use crossterm::terminal::{
 };
 use std::io::Stdout;
 use tui::backend::CrosstermBackend;
+use tui::layout::{Constraint, Direction, Layout};
 use tui::style::{Color, Style};
 use tui::text::{Span, Spans};
 use tui::widgets;
@@ -127,6 +128,13 @@ impl Ui {
             //     .highlight_style(Style::default().add_modifier(Modifier::BOLD));
             // f.render_stateful_widget(file, f.size(), &mut self.file_state);
 
+            // Layout
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
+                .split(f.size());
+
             // Stack frames
             let mut stack_frames: Vec<ListItem> = vec![];
             for thread in &state.threads {
@@ -191,14 +199,28 @@ impl Ui {
                     }
                 }
             }
-
             let stack_frames_list = widgets::List::new(stack_frames).block(
                 widgets::Block::default()
                     .title("Call stack")
                     .borders(Borders::ALL),
             );
+            f.render_widget(stack_frames_list, chunks[0]);
 
-            f.render_widget(stack_frames_list, f.size());
+            // Debugee console
+            let console_list = widgets::List::new(
+                state
+                    .console
+                    .iter()
+                    .cloned()
+                    .map(ListItem::new)
+                    .collect::<Vec<ListItem>>(),
+            )
+            .block(
+                widgets::Block::default()
+                    .title("Debug console")
+                    .borders(Borders::ALL),
+            );
+            f.render_widget(console_list, chunks[1]);
         })?;
 
         Ok(())
