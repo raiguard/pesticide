@@ -73,6 +73,7 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
             }
             // Debugee stdout
             Some(line) = debugee_rx.recv() => {
+                trace!("Received debugee stdout: {}", line);
                 state.console.push(line);
                 actions.push(Action::Redraw);
             }
@@ -272,6 +273,8 @@ async fn handle_request(
             );
             tokio::spawn(async move {
                 while let Some(Ok(line)) = stdout.next().await {
+                    // FIXME: Debugee is not sending STDOUT until it ends?
+                    trace!("DEBUGEE SENT STDOUT: {}", line);
                     debugee_tx.send(line).unwrap();
                 }
             });
