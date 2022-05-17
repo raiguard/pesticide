@@ -13,6 +13,10 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::codec::{FramedRead, LinesCodec};
 
 pub async fn run(config_path: PathBuf) -> Result<()> {
+    // Parse configuration
+    // Do this first so we can display the error in the terminal
+    let config = Config::new(config_path)?;
+
     // Initialize state
     let mut state = State::new();
     // Initialize UI
@@ -24,7 +28,7 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
     let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // Spin up debug adapter
-    let mut adapter = Adapter::new(Config::new(config_path)?)?;
+    let mut adapter = Adapter::new(config)?;
     // Send initialize request
     let adapter_id = adapter.config.adapter_id.clone();
     adapter
