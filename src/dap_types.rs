@@ -1,3 +1,12 @@
+//! Rust types for the Debug Adapter Protocol.
+//!
+//! These types are hand-copied and converted, so there may be errors. See
+//! https://microsoft.github.io/debug-adapter-protocol/specification for the
+//! canonical reference.
+//!
+//! These types are incomplete - there are many things that are missing, and
+//! I am adding them as I need them.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
