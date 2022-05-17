@@ -10,7 +10,7 @@ use itertools::Itertools;
 use std::collections::HashSet;
 use std::io::Stdout;
 use tui::backend::CrosstermBackend;
-use tui::layout::{Constraint, Direction, Layout};
+use tui::layout::{Constraint, Corner, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
 use tui::widgets::{self, Block, List};
@@ -159,6 +159,12 @@ impl Ui {
                     }
                 },
                 // Adapter requests
+                KeyCode::Char('c') => {
+                    actions.push(Action::Request(Request::Continue(ContinueArgs {
+                        thread_id: state.current_thread,
+                        single_thread: true,
+                    })))
+                }
                 KeyCode::Char('i') => actions.push(Action::Request(Request::StepIn(StepInArgs {
                     thread_id: state.current_thread,
                     single_thread: true,
@@ -204,28 +210,34 @@ impl Ui {
                 .direction(Direction::Vertical)
                 .constraints(
                     [
-                        Constraint::Percentage(40),
-                        Constraint::Percentage(40),
-                        Constraint::Min(10),
-                        Constraint::Length(3),
+                        Constraint::Percentage(30),
+                        Constraint::Percentage(30),
+                        Constraint::Min(40),
                     ]
                     .as_ref(),
                 )
                 .split(f.size());
 
             // Variables
+            let mut variables = vec![];
+            if let Some(scopes) = state.scopes.get(&state.current_stack_frame) {
+                for scope in scopes {
+                    variables.push(ListItem::new(format!("{} {}", "▼", scope.name)));
+                }
+            }
             f.render_widget(
-                Block::default().title("Variables").borders(Borders::ALL),
+                List::new(variables)
+                    .block(Block::default().title("Variables").borders(Borders::ALL)),
                 chunks[0],
             );
-            // Watches
-            f.render_widget(
-                Block::default().title("Watch").borders(Borders::ALL),
-                chunks[1],
-            );
+            // // Watches
+            // f.render_widget(
+            //     Block::default().title("Watch").borders(Borders::ALL),
+            //     chunks[1],
+            // );
 
             // Stack frames
-            let mut stack_frames: Vec<ListItem> = vec![];
+            let mut stack_frames = vec![];
             let mut stacktrace_list = vec![];
             for thread in &state.threads {
                 // Thread header
@@ -331,31 +343,33 @@ impl Ui {
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD));
             f.render_stateful_widget(
                 stack_frames_list,
-                chunks[2],
+                chunks[1],
                 self.call_stack_list.get_internal_state(),
             );
 
-            // Breakpoints
-            f.render_widget(
-                Block::default().title("Breakpoints").borders(Borders::ALL),
-                chunks[3],
-            );
-
-            // // Debugee console
-            // let console_list = widgets::List::new(
-            //     state
-            //         .console
-            //         .iter()
-            //         .cloned()
-            //         .map(ListItem::new)
-            //         .collect::<Vec<ListItem>>(),
-            // )
-            // .block(
-            //     widgets::Block::default()
-            //         .title("Debug console")
-            //         .borders(Borders::ALL),
+            // // Breakpoints
+            // f.render_widget(
+            //     Block::default().title("Breakpoints").borders(Borders::ALL),
+            //     chunks[3],
             // );
-            // f.render_widget(console_list, chunks[1]);
+
+            // Debugee console
+            let console_list = widgets::List::new(
+                state
+                    .console
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .map(ListItem::new)
+                    .collect::<Vec<ListItem>>(),
+            )
+            .start_corner(Corner::BottomLeft)
+            .block(
+                widgets::Block::default()
+                    .title("Debug console")
+                    .borders(Borders::ALL),
+            );
+            f.render_widget(console_list, chunks[2]);
         })?;
 
         Ok(())

@@ -1,7 +1,7 @@
 use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap_types::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -226,13 +226,23 @@ async fn handle_request(
                 cmd.append(&mut req.args);
                 Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn()
             }
-            // FIXME: This completely breaks the UI because this process is attaching to our terminal somehow
-            RunInTerminalKind::Integrated => Command::new(req.args[0].clone())
-                .args(req.args[1..].to_vec())
-                .stdin(Stdio::null())
-                .stderr(Stdio::null())
-                .stdout(Stdio::piped())
-                .spawn(),
+            // SAFETY: We are simply calling setsid(), which is a libc function
+            RunInTerminalKind::Integrated => unsafe {
+                Command::new(req.args[0].clone())
+                    .args(req.args[1..].to_vec())
+                    .stdin(Stdio::null())
+                    .stderr(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .pre_exec(|| {
+                        let pid = libc::setsid();
+                        if pid == -1 {
+                            // FIXME: This is awful
+                            panic!("Failed call to setsid() for debugee");
+                        }
+                        Ok(())
+                    })
+                    .spawn()
+            },
         }?;
 
         adapter
