@@ -394,10 +394,13 @@ async fn handle_response(
                     .first()
                     .map(|frame| frame.id)
                     .unwrap_or(0);
-                actions.push(Action::Redraw);
             }
         }
     };
+
+    if adapter.num_requests() == 0 {
+        actions.push(Action::Redraw);
+    }
 
     Ok(actions)
 }
