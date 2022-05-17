@@ -1,7 +1,7 @@
 use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap_types::*;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -341,12 +341,14 @@ async fn handle_response(
         }
         Response::StackTrace(res) => {
             if let Some(Request::StackTrace(req)) = req {
-                // Request scopes for current stack frame
-                if res
-                    .stack_frames
-                    .iter()
-                    .any(|frame| frame.id == state.current_stack_frame)
-                {
+                if req.thread_id == state.current_thread {
+                    // Set current stack frame to topmost of this thread
+                    state.current_stack_frame = res
+                        .stack_frames
+                        .first()
+                        .map(|frame| frame.id)
+                        .unwrap_or_default();
+                    // Request scopes for current stack frame
                     adapter
                         .send_request(Request::Scopes(ScopesArgs {
                             frame_id: state.current_stack_frame,
@@ -384,16 +386,6 @@ async fn handle_response(
                 state
                     .variables
                     .insert(req.variables_reference, res.variables);
-            }
-
-            if adapter.num_requests() == 0 {
-                // Set current stack frame to topmost of current thread.
-                // If the current thread has no stack frames, or they're
-                // somehow empty, select none of them.
-                state.current_stack_frame = state.stack_frames[&state.current_thread]
-                    .first()
-                    .map(|frame| frame.id)
-                    .unwrap_or(0);
             }
         }
     };
