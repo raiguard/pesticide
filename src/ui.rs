@@ -7,7 +7,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use itertools::Itertools;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::Stdout;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Corner, Direction, Layout};
@@ -22,14 +22,15 @@ pub struct Ui {
     pub input_stream: EventStream,
 
     terminal: Terminal,
+    focused: FocusedWidget,
 
+    // Call stack
     call_stack_list: ListStateWithData<CallStackItemKind>,
     expanded_threads: HashSet<u32>,
 
-    // Source file
-    file: Vec<String>,
-    file_state: ListState,
-    focused: FocusedWidget,
+    // Variables
+    variables_list: ListStateWithData<VariablesItemKind>,
+    expanded_variables: HashSet<VariablesItemKind>,
 }
 
 impl Ui {
@@ -41,13 +42,6 @@ impl Ui {
         let backend = CrosstermBackend::new(stdout);
         let terminal = tui::Terminal::new(backend)?;
 
-        // TEMPORARY: Display the main test file
-        let path = std::env::current_dir()?.join("test.py");
-        let contents = tokio::fs::read_to_string(path).await?;
-        let lines: Vec<String> = contents.lines().map(str::to_string).collect();
-        let mut state = ListState::default();
-        state.select(Some(0));
-
         Ok(Self {
             input_stream: EventStream::new(),
             terminal,
@@ -55,9 +49,10 @@ impl Ui {
             call_stack_list: ListStateWithData::new(),
             expanded_threads: HashSet::new(),
 
-            file: lines,
-            file_state: state,
-            focused: FocusedWidget::CallStack,
+            variables_list: ListStateWithData::new(),
+            expanded_variables: HashSet::new(),
+
+            focused: FocusedWidget::Variables,
         })
     }
 
@@ -83,6 +78,55 @@ impl Ui {
         match event {
             crossterm::event::Event::Key(event) => match event.code {
                 KeyCode::Char(' ') => match self.focused {
+                    FocusedWidget::Variables => {
+                        if let Some(focused_line) = self.variables_list.selected_item() {
+                            if self.expanded_variables.contains(focused_line) {
+                                self.expanded_variables.remove(focused_line);
+                            } else {
+                                self.expanded_variables.insert(focused_line.clone());
+                                match focused_line {
+                                    VariablesItemKind::Scope(_, reference) => {
+                                        if state.variables.get(reference).is_none() {
+                                            actions.push(Action::Request(Request::Variables(
+                                                VariablesArgs {
+                                                    variables_reference: *reference,
+                                                    filter: None,
+                                                    start: None,
+                                                    count: None,
+                                                    format: None,
+                                                },
+                                            )))
+                                        }
+                                    }
+                                    VariablesItemKind::Variable(parent_ref, index) => {
+                                        if let Some(variable) = state
+                                            .variables
+                                            .get(parent_ref)
+                                            .and_then(|variables| variables.get(*index as usize))
+                                        {
+                                            if variable.variables_reference > 0
+                                                && !state
+                                                    .variables
+                                                    .contains_key(&variable.variables_reference)
+                                            {
+                                                actions.push(Action::Request(Request::Variables(
+                                                    VariablesArgs {
+                                                        variables_reference: variable
+                                                            .variables_reference,
+                                                        filter: None,
+                                                        start: None,
+                                                        count: None,
+                                                        format: None,
+                                                    },
+                                                )))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            actions.push(Action::Redraw);
+                        }
+                    }
                     FocusedWidget::CallStack => {
                         if let Some(focused_line) = self.call_stack_list.selected_item() {
                             match focused_line {
@@ -111,38 +155,72 @@ impl Ui {
                             actions.push(Action::Redraw);
                         }
                     }
-                    FocusedWidget::SourceFile => todo!(),
+                    FocusedWidget::DebugConsole => (),
                 },
+                // Focused view
+                KeyCode::Char('h') => {
+                    self.focused = match self.focused {
+                        FocusedWidget::CallStack => FocusedWidget::Variables,
+                        FocusedWidget::DebugConsole => FocusedWidget::CallStack,
+                        FocusedWidget::Variables => FocusedWidget::DebugConsole,
+                    };
+                    actions.push(Action::Redraw);
+                }
+                KeyCode::Char('l') => {
+                    self.focused = match self.focused {
+                        FocusedWidget::CallStack => FocusedWidget::DebugConsole,
+                        FocusedWidget::DebugConsole => FocusedWidget::Variables,
+                        FocusedWidget::Variables => FocusedWidget::CallStack,
+                    };
+                    actions.push(Action::Redraw);
+                }
                 // Movement
                 KeyCode::Char('g') => match self.focused {
+                    FocusedWidget::Variables => {
+                        self.variables_list.select(0);
+                        actions.push(Action::Redraw);
+                    }
                     FocusedWidget::CallStack => {
                         self.call_stack_list.select(0);
                         actions.push(Action::Redraw);
                     }
-                    FocusedWidget::SourceFile => self.file_state.select(Some(0)),
+                    FocusedWidget::DebugConsole => (),
                 },
                 KeyCode::Char('G') => match self.focused {
+                    FocusedWidget::Variables => {
+                        self.variables_list.select(self.variables_list.len() - 1);
+                        actions.push(Action::Redraw);
+                    }
                     FocusedWidget::CallStack => {
                         self.call_stack_list.select(self.call_stack_list.len() - 1);
                         actions.push(Action::Redraw);
                     }
-                    FocusedWidget::SourceFile => self.file_state.select(Some(self.file.len() - 1)),
+                    FocusedWidget::DebugConsole => (),
                 },
                 KeyCode::Char('j') => match self.focused {
+                    FocusedWidget::Variables => {
+                        if let Some(i) = self.variables_list.selected() {
+                            self.variables_list.select(i + 1);
+                            actions.push(Action::Redraw);
+                        }
+                    }
                     FocusedWidget::CallStack => {
                         if let Some(i) = self.call_stack_list.selected() {
                             self.call_stack_list.select(i + 1);
                             actions.push(Action::Redraw);
                         }
                     }
-                    FocusedWidget::SourceFile => {
-                        let selected = self.file_state.selected().unwrap();
-                        if selected < self.file.len() - 1 {
-                            self.file_state.select(Some(selected + 1));
-                        }
-                    }
+                    FocusedWidget::DebugConsole => (),
                 },
                 KeyCode::Char('k') => match self.focused {
+                    FocusedWidget::Variables => {
+                        if let Some(i) = self.variables_list.selected() {
+                            if i > 0 {
+                                self.variables_list.select(i - 1);
+                                actions.push(Action::Redraw);
+                            }
+                        }
+                    }
                     FocusedWidget::CallStack => {
                         if let Some(i) = self.call_stack_list.selected() {
                             if i > 0 {
@@ -151,12 +229,7 @@ impl Ui {
                             }
                         }
                     }
-                    FocusedWidget::SourceFile => {
-                        let selected = self.file_state.selected().unwrap();
-                        if selected > 0 {
-                            self.file_state.select(Some(selected - 1));
-                        }
-                    }
+                    FocusedWidget::DebugConsole => (),
                 },
                 // Adapter requests
                 KeyCode::Char('c') => {
@@ -183,28 +256,49 @@ impl Ui {
     }
 
     pub fn draw(&mut self, state: &crate::controller::State) -> Result<()> {
-        self.terminal.draw(|f| {
-            // Source file stuff
-            // let num_width = format!("{}", self.file.len()).len();
-            // // TODO: Store the file content as ListItems so we don't have to convert on every render
-            // let lines: Vec<ListItem> = self
-            //     .file
-            //     .iter()
-            //     .enumerate()
-            //     .map(|(i, line)| format!("{:>width$}  {}", i + 1, line, width = num_width))
-            //     .map(ListItem::new)
-            //     .collect();
-            // let file = widgets::List::new(lines)
-            //     .block(
-            //         widgets::Block::default()
-            //             .title(" Source file ")
-            //             .borders(Borders::ALL)
-            //             .style(Style::default().fg(Color::Green)),
-            //     )
-            //     .style(Style::default().fg(Color::White))
-            //     .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-            // f.render_stateful_widget(file, f.size(), &mut self.file_state);
+        // Variables
+        let mut variables_disp = vec![];
+        let mut variables_list = vec![];
+        if let Some(scopes) = state.scopes.get(&state.current_stack_frame) {
+            for (scope_index, scope) in scopes.iter().enumerate() {
+                let scope_ident =
+                    VariablesItemKind::Scope(scope_index as u32, scope.variables_reference);
+                let scope_expanded = self.expanded_variables.contains(&scope_ident);
 
+                variables_disp.push(ListItem::new(Span::styled(
+                    format!("{} {}", if scope_expanded { "▼" } else { "▶" }, scope.name),
+                    Style::default().fg(Color::White),
+                )));
+                variables_list.push(scope_ident);
+
+                if scope_expanded {
+                    walk_variables(
+                        self,
+                        state,
+                        &mut variables_disp,
+                        &mut variables_list,
+                        (1, scope.variables_reference),
+                    );
+                }
+            }
+        }
+        self.variables_list.update_items(variables_list);
+        let variables_list = List::new(variables_disp)
+            .block(
+                Block::default()
+                    .title("Variables")
+                    .borders(Borders::ALL)
+                    .style(
+                        Style::default().fg(if let FocusedWidget::Variables = self.focused {
+                            Color::Green
+                        } else {
+                            Color::White
+                        }),
+                    ),
+            )
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+        self.terminal.draw(|f| {
             // Layout
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -218,23 +312,11 @@ impl Ui {
                 )
                 .split(f.size());
 
-            // Variables
-            let mut variables = vec![];
-            if let Some(scopes) = state.scopes.get(&state.current_stack_frame) {
-                for scope in scopes {
-                    variables.push(ListItem::new(format!("{} {}", "▼", scope.name)));
-                }
-            }
-            f.render_widget(
-                List::new(variables)
-                    .block(Block::default().title("Variables").borders(Borders::ALL)),
+            f.render_stateful_widget(
+                variables_list,
                 chunks[0],
+                self.variables_list.get_internal_state(),
             );
-            // // Watches
-            // f.render_widget(
-            //     Block::default().title("Watch").borders(Borders::ALL),
-            //     chunks[1],
-            // );
 
             // Stack frames
             let mut stack_frames = vec![];
@@ -347,12 +429,6 @@ impl Ui {
                 self.call_stack_list.get_internal_state(),
             );
 
-            // // Breakpoints
-            // f.render_widget(
-            //     Block::default().title("Breakpoints").borders(Borders::ALL),
-            //     chunks[3],
-            // );
-
             // Debugee console
             let console_list = widgets::List::new(
                 state
@@ -376,13 +452,65 @@ impl Ui {
     }
 }
 
+fn walk_variables(
+    ui: &Ui,
+    state: &crate::controller::State,
+    variables_disp: &mut Vec<ListItem>,
+    variables_list: &mut Vec<VariablesItemKind>,
+    (indent, variables_reference): (usize, u32),
+) {
+    if let Some(variables) = state.variables.get(&variables_reference) {
+        for (i, variable) in variables.iter().enumerate() {
+            let has_children = variable.variables_reference > 0;
+            let expanded = ui
+                .expanded_variables
+                .contains(&VariablesItemKind::Variable(variables_reference, i as u32));
+            variables_disp.push(ListItem::new(Spans::from(vec![
+                Span::styled(
+                    format!(
+                        "{:>indent$}{}{}: ",
+                        "",
+                        match (has_children, expanded) {
+                            (true, false) => "▶ ",
+                            (true, true) => "▼ ",
+                            _ => "",
+                        },
+                        variable.name,
+                        indent = indent * 2,
+                    ),
+                    Style::default().fg(Color::Magenta),
+                ),
+                Span::styled(variable.value.clone(), Style::default().fg(Color::White)),
+            ])));
+            variables_list.push(VariablesItemKind::Variable(variables_reference, i as u32));
+
+            if has_children && expanded {
+                walk_variables(
+                    ui,
+                    state,
+                    variables_disp,
+                    variables_list,
+                    (indent + 1, variable.variables_reference),
+                );
+            }
+        }
+    }
+}
+
 enum FocusedWidget {
     // Breakpoints,
     CallStack,
-    // DebugConsole,
-    SourceFile,
-    // Variables,
-    // Watch,
+    DebugConsole,
+    // SourceFile,
+    Variables,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+enum VariablesItemKind {
+    // Scope index and variables reference
+    Scope(u32, u32),
+    // Parent variables reference and variable index
+    Variable(u32, u32),
 }
 
 #[derive(PartialEq)]
