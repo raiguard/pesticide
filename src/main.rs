@@ -44,7 +44,7 @@ mod ui;
 #[macro_use]
 extern crate log;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use pico_args::Arguments;
 use std::fs::File;
 use std::path::PathBuf;
@@ -61,30 +61,61 @@ async fn main() -> Result<()> {
         config: args
             .opt_value_from_str("--config")?
             .unwrap_or_else(|| std::env::current_dir().unwrap().join("pesticide.toml")),
+        request: args.opt_value_from_str("--request")?,
+        session: args.opt_value_from_str("--session")?,
     };
-
-    // Create log file
-    let log = dirs::data_dir()
-        .expect("Unable to get local data directory")
-        .join("pesticide");
-    if !log.exists() {
-        tokio::fs::create_dir_all(log.clone()).await?;
+    if cli.request.is_some() && cli.session.is_none() {
+        bail!("--request flag requires --session to be defined.");
     }
-    let log = log.join("pesticide.log");
+    let session = cli
+        .session
+        .unwrap_or_else(|| std::process::id().to_string());
 
-    // Initialize logging
-    simplelog::WriteLogger::init(
-        log::LevelFilter::Trace,
-        simplelog::Config::default(),
-        File::create(log)?,
-    )?;
+    // Determine named pipe path
+    let pipe_path = dirs::runtime_dir()
+        .expect("Could not get runtime directory")
+        .join("pesticide");
+    if !pipe_path.exists() {
+        tokio::fs::create_dir_all(&pipe_path).await?;
+    }
+    let pipe_path = pipe_path.join(&session);
 
-    controller::run(cli.config).await
+    if let Some(request) = cli.request {
+        // let pipe = OpenOptions::new()
+        //     .read(false)
+        //     .write(true)
+        //     .open(pipe_path)
+        //     .await?;
+        tokio::fs::write(pipe_path, request).await?;
+
+        Ok(())
+    } else {
+        // Create log file
+        let log = dirs::data_dir()
+            .expect("Unable to get local data directory")
+            .join("pesticide");
+        if !log.exists() {
+            tokio::fs::create_dir_all(&log).await?;
+        }
+        let log = log.join(format!("{session}.log"));
+
+        // Initialize logging
+        simplelog::WriteLogger::init(
+            log::LevelFilter::Trace,
+            simplelog::Config::default(),
+            File::create(log)?,
+        )?;
+
+        // Run application
+        controller::run(cli.config, pipe_path).await
+    }
 }
 
 #[derive(Debug)]
 pub struct Cli {
     config: PathBuf,
+    request: Option<String>,
+    session: Option<String>,
 }
 
 const HELP: &str = "\
@@ -92,6 +123,6 @@ usage: pesticide [options]
 options:
     --config <FILE>   Debugger configuration file (default: $PWD/pesticide.toml)
     --help            Print help information
-    --server          Initialize as server instead of client
+    --request <DATA>  Send a request to the given session
     --session <NAME>  Set a session name (default: PID)
 ";

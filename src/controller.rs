@@ -4,15 +4,18 @@ use crate::dap_types::*;
 use anyhow::{anyhow, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
+use nix::sys::stat::Mode;
+use nix::unistd::mkfifo;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::fs::OpenOptions;
 use tokio::process::Command;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_util::codec::{FramedRead, LinesCodec};
+use tokio_util::codec::{BytesCodec, FramedRead, LinesCodec};
 
-pub async fn run(config_path: PathBuf) -> Result<()> {
+pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
     // Parse configuration
     // Do this first so we can display the error in the terminal
     let config = Config::new(config_path)?;
@@ -26,6 +29,35 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
 
     // Channel to read debugee stdout through
     let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Receive commands from pipe
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+    let cmd_pipe_path = pipe_path.clone();
+    let pipe_reader = tokio::spawn(async move {
+        if !cmd_pipe_path.exists() {
+            mkfifo(&cmd_pipe_path, Mode::S_IRWXU).unwrap();
+        }
+        let cmd_pipe = OpenOptions::new()
+            .write(false)
+            .read(true)
+            .open(&cmd_pipe_path)
+            .await
+            .unwrap();
+        let mut cmd_stream = FramedRead::new(cmd_pipe, BytesCodec::new());
+
+        loop {
+            let read = cmd_stream.next().await;
+            match read {
+                Some(Ok(msg)) => {
+                    cmd_tx
+                        .send(String::from_utf8(msg.to_vec()).unwrap())
+                        .unwrap();
+                }
+                Some(Err(e)) => error!("Pipe error: {}", e),
+                None => (),
+            }
+        }
+    });
 
     // Spin up debug adapter
     let mut adapter = Adapter::new(config)?;
@@ -71,6 +103,10 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
                     Err(e) => error!("{}", e)
                 }
             }
+            // External requests
+            Some(cmd) = cmd_rx.recv() => {
+                debug!("RECEIVED COMMAND: {}", cmd);
+            }
             // Debugee stdout
             Some(line) = debugee_rx.recv() => {
                 trace!("Received debugee stdout: {}", line);
@@ -98,6 +134,8 @@ pub async fn run(config_path: PathBuf) -> Result<()> {
     trace!("Cleaning up");
     ui.destroy()?;
     adapter.quit().await?;
+    pipe_reader.abort();
+    tokio::fs::remove_file(pipe_path).await?;
 
     Ok(())
 }

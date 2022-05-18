@@ -15,6 +15,7 @@ futures-util = {version = "0.3.21", features = ["sink"]}
 itertools = "0.10.3"
 libc = "0.2.125"
 log = "0.4.16"
+nix = "0.24.1"
 pico-args = "0.4.2"
 regex = "1.5.5"
 serde = {version = "1.0.136", features = ["derive"]}
