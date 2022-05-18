@@ -54,7 +54,11 @@ async fn main() -> Result<()> {
     // Parse CLI arguments
     let mut args = Arguments::from_env();
     if args.contains("--help") {
-        println!("{}", HELP);
+        println!("{HELP}");
+        return Ok(());
+    } else if args.contains("--kakoune") {
+        let kakscript = include_str!("../rc/pesticide.kak");
+        println!("{kakscript}");
         return Ok(());
     }
     let cli = Cli {
@@ -81,13 +85,11 @@ async fn main() -> Result<()> {
     let pipe_path = pipe_path.join(&session);
 
     if let Some(request) = cli.request {
-        // let pipe = OpenOptions::new()
-        //     .read(false)
-        //     .write(true)
-        //     .open(pipe_path)
-        //     .await?;
+        if !pipe_path.exists() {
+            bail!("Session '{}' is not active", session);
+        }
+        // Write command to the session's FIFO
         tokio::fs::write(pipe_path, request).await?;
-
         Ok(())
     } else {
         // Create log file
@@ -123,6 +125,7 @@ usage: pesticide [options]
 options:
     --config <FILE>   Debugger configuration file (default: $PWD/pesticide.toml)
     --help            Print help information
+    --kakoune         Print kakoune definitions
     --request <DATA>  Send a request to the given session
     --session <NAME>  Set a session name (default: PID)
 ";
