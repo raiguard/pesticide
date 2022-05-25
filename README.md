@@ -1,3 +1,5 @@
+# THIS PROJECT HAS MOVED TO [SOURCEHUT](https://sr.ht/~raiguard/pesticide)
+
 # Pesticide
 
 A TUI front-end for the Debug Adapter Protocol.
