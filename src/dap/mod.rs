@@ -1,5 +1,6 @@
 #![allow(non_camel_case_types)]
 
+pub mod codec;
 mod schema;
 mod vec_map;
 

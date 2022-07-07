@@ -87,21 +87,41 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
         let mut actions = vec![];
         select! {
             // Incoming debug adapter messages
-            res = adapter.read() => {
+            res = adapter.stdout.next() => {
                 match res {
-                    Ok(Some(msg)) => {
-                        adapter.update_seq(msg.seq);
-                        actions.append(&mut match msg.type_ {
-                            ProtocolMessageType::Event(event) => handle_event(&mut state, &mut adapter, event).await?,
-                            ProtocolMessageType::Request(request) => handle_request(&mut adapter, request, msg.seq, debugee_tx.clone()).await?,
-                            ProtocolMessageType::Response(response) => handle_response(&mut state, &mut adapter, response).await?,
-                        });
-                    },
-                    Ok(None) => {
-                        info!("Debug adapter shut down, ending session");
+                    Some(res) => {
+                        match res {
+                            Ok(Ok(msg)) => {
+                                adapter.update_seq(msg.seq);
+                                actions.append(&mut match msg.type_ {
+                                    ProtocolMessageType::Event(event) => handle_event(
+                                        &mut state,
+                                        &mut adapter,
+                                        event
+                                    ).await?,
+                                    ProtocolMessageType::Request(request) => handle_request(
+                                        &mut adapter,
+                                        request,
+                                        msg.seq,
+                                        debugee_tx.clone()
+                                    ).await?,
+                                    ProtocolMessageType::Response(response) => handle_response(
+                                        &mut state,
+                                        &mut adapter,
+                                        response
+                                    ).await?,
+                                });
+                            },
+                            Ok(Err(e)) => {
+                                error!("{:?}", e);
+                            },
+                            Err(e) => error!("{}", e)
+                        }
+                    }
+                    None => {
+                        info!("Debug adapter exited, shutting down");
                         break
-                    },
-                    Err(e) => error!("{}", e)
+                    }
                 }
             }
             // External requests
@@ -137,6 +157,8 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
     adapter.quit().await?;
     pipe_reader.abort();
     tokio::fs::remove_file(pipe_path).await?;
+
+    trace!("Cleaned up");
 
     Ok(())
 }
@@ -306,7 +328,6 @@ async fn handle_request(
             .send_response(
                 seq,
                 true,
-                None,
                 ResponseBody::runInTerminal(RunInTerminalResponseBody {
                     process_id: child.id().map(|id| id as i64),
                     shell_process_id: None,
