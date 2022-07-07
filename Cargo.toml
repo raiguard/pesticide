@@ -18,6 +18,7 @@ log = "0.4.16"
 nix = "0.24.1"
 pico-args = "0.4.2"
 regex = "1.5.5"
+schemafy = "0.6.0"
 serde = {version = "1.0.136", features = ["derive"]}
 serde_json = "1.0.79"
 simplelog = "0.12.0"

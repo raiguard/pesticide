@@ -38,7 +38,7 @@
 mod adapter;
 mod config;
 mod controller;
-mod dap_types;
+mod dap;
 mod ui;
 
 #[macro_use]

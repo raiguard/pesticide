@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::dap_types::*;
+use crate::dap::*;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -14,7 +14,7 @@ pub struct Adapter {
     /// TODO: Wait to construct adapter object until after this is retrieved?
     pub capabilities: Option<Capabilities>,
     /// Responses from the debug adapter will use the seq as an identifier
-    requests: HashMap<u32, Request>,
+    requests: HashMap<u32, RequestArguments>,
 
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
@@ -69,12 +69,15 @@ impl Adapter {
         self.child.kill().await
     }
 
-    pub async fn send_request(&mut self, request: Request) -> Result<()> {
+    pub async fn send_request(&mut self, request: RequestArguments) -> Result<()> {
         let seq = self.next_seq();
 
         self.requests.insert(seq, request.clone());
 
-        let req = serde_json::to_string(&AdapterMessage::Request(RequestPayload { seq, request }))?;
+        let req = serde_json::to_string(&ProtocolMessage {
+            seq,
+            type_: ProtocolMessageType::Request(request),
+        })?;
 
         self.write(req).await?;
 
@@ -86,24 +89,25 @@ impl Adapter {
         request_seq: u32,
         success: bool,
         message: Option<String>,
-        response: Response,
+        response: ResponseBody,
     ) -> Result<()> {
         let seq = self.next_seq();
 
-        let res = serde_json::to_string(&AdapterMessage::Response(ResponsePayload {
+        let res = serde_json::to_string(&ProtocolMessage {
             seq,
-            request_seq,
-            success,
-            message,
-            response,
-        }))?;
+            type_: ProtocolMessageType::Response(Response {
+                request_seq,
+                success,
+                result: ResponseResult::Success { body: response },
+            }),
+        })?;
 
         self.write(res).await?;
 
         Ok(())
     }
 
-    pub fn get_request(&mut self, seq: u32) -> Option<Request> {
+    pub fn get_request(&mut self, seq: u32) -> Option<RequestArguments> {
         self.requests.remove(&seq)
     }
 
@@ -111,7 +115,7 @@ impl Adapter {
         self.requests.len()
     }
 
-    pub async fn read(&mut self) -> Result<Option<AdapterMessage>> {
+    pub async fn read(&mut self) -> Result<Option<ProtocolMessage>> {
         // Parse headers
         let mut headers = HashMap::new();
         loop {
@@ -144,7 +148,7 @@ impl Adapter {
         // TODO: Remove the intermediary string
         let content = String::from_utf8(content).expect("Failed to read content as UTF-8 string");
         debug!("[DEBUG ADAPTER] >> {}", content);
-        match serde_json::from_str::<AdapterMessage>(&content) {
+        match serde_json::from_str::<ProtocolMessage>(&content) {
             Ok(msg) => Ok(Some(msg)),
             Err(e) => bail!("[ADAPTER RX] {}", e),
         }

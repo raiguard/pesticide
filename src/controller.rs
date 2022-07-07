@@ -1,7 +1,7 @@
 use crate::adapter::Adapter;
 use crate::config::Config;
-use crate::dap_types::*;
-use anyhow::{anyhow, Result};
+use crate::dap::*;
+use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
 use nix::sys::stat::Mode;
@@ -64,21 +64,21 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
     // Send initialize request
     let adapter_id = adapter.config.adapter_id.clone();
     adapter
-        .send_request(Request::Initialize(InitializeArgs {
+        .send_request(RequestArguments::initialize(InitializeRequestArguments {
             client_id: Some("pesticide".to_string()),
             client_name: Some("Pesticide".to_string()),
-            adapter_id,
+            adapter_id: adapter_id.unwrap(),
             locale: Some("en-US".to_string()),
-            lines_start_at_1: true,
-            columns_start_at_1: true,
-            path_format: Some(InitializePathFormat::Path),
-            supports_variable_type: false,
-            supports_variable_paging: false,
-            supports_run_in_terminal_request: true,
-            supports_memory_references: false,
-            supports_progress_reporting: false,
-            supports_invalidated_event: false,
-            supports_memory_event: false,
+            lines_start_at_1: Some(true),
+            columns_start_at_1: Some(true),
+            path_format: Some(String::from("path")),
+            supports_variable_type: None,
+            supports_variable_paging: None,
+            supports_run_in_terminal_request: Some(true),
+            supports_memory_references: None,
+            supports_progress_reporting: None,
+            supports_invalidated_event: None,
+            supports_memory_event: None,
         }))
         .await?;
 
@@ -90,10 +90,11 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
             res = adapter.read() => {
                 match res {
                     Ok(Some(msg)) => {
-                        actions.append(&mut match msg {
-                            AdapterMessage::Event(payload) => handle_event(&mut state, &mut adapter, payload).await?,
-                            AdapterMessage::Request(payload) => handle_request(&mut adapter, payload, debugee_tx.clone()).await?,
-                            AdapterMessage::Response(payload) => handle_response(&mut state, &mut adapter, payload).await?,
+                        adapter.update_seq(msg.seq);
+                        actions.append(&mut match msg.type_ {
+                            ProtocolMessageType::Event(event) => handle_event(&mut state, &mut adapter, event).await?,
+                            ProtocolMessageType::Request(request) => handle_request(&mut adapter, request, msg.seq, debugee_tx.clone()).await?,
+                            ProtocolMessageType::Response(response) => handle_response(&mut state, &mut adapter, response).await?,
                         });
                     },
                     Ok(None) => {
@@ -142,20 +143,20 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
 
 pub struct State {
     /// The thread we are currently stopped on
-    pub current_thread: u32,
+    pub current_thread: i64,
     /// The stack frame we are currently stopped on
-    pub current_stack_frame: u32,
+    pub current_stack_frame: i64,
     /// Known stopped threads
     /// Any threads that were stopped that we didn't get explicitly will be marked as "paused"
-    pub stopped_threads: HashMap<u32, StoppedReason>,
+    pub stopped_threads: HashMap<i64, String>,
     pub all_threads_stopped: bool,
 
     pub console: Vec<String>,
 
     pub threads: Vec<Thread>,
-    pub stack_frames: HashMap<u32, Vec<StackFrame>>,
-    pub scopes: HashMap<u32, Vec<Scope>>,
-    pub variables: HashMap<u32, Vec<Variable>>,
+    pub stack_frames: HashMap<i64, Vec<StackFrame>>,
+    pub scopes: HashMap<i64, Vec<Scope>>,
+    pub variables: HashMap<i64, Vec<Variable>>,
 }
 
 impl State {
@@ -179,75 +180,87 @@ impl State {
 pub enum Action {
     Quit,
     Redraw,
-    Request(Request),
+    Request(RequestArguments),
 }
 
 async fn handle_event(
     state: &mut State,
     adapter: &mut Adapter,
-    payload: EventPayload,
+    event: EventBody,
 ) -> Result<Vec<Action>> {
-    adapter.update_seq(payload.seq);
-
     let mut actions = vec![];
-    match payload.event {
-        Event::Continued(event) => {
-            if event.all_threads_continued {
+    match event {
+        EventBody::continued(event) => {
+            if event.all_threads_continued.unwrap_or_default() {
                 state.stopped_threads.clear();
             } else {
                 state.stopped_threads.remove(&event.thread_id);
             }
         }
-        Event::Exited(_) => {
+        EventBody::exited(_) => {
             actions.push(Action::Quit);
         }
-        Event::Module(_) => (), // TODO:
-        Event::Output(event) => match event.category {
-            Some(OutputCategory::Telemetry) => (), // IDGAF about telemetry
-            _ => info!("[DEBUG ADAPTER] >> {}", event.output),
+        EventBody::module(_) => (), // TODO:
+        EventBody::output(event) => match event.category.as_deref() {
+            Some("telemetry") => (), // IDGAF about telemetry
+            _ => info!("Adapter output event: {}", event.output),
         },
-        Event::Initialized => {
+        EventBody::initialized => {
             info!("Debug adapter is initialized");
             // TODO: setBreakpoints, etc...
-            adapter.send_request(Request::ConfigurationDone).await?;
+            adapter
+                .send_request(RequestArguments::configurationDone(None))
+                .await?;
         }
-        Event::Process(_) => (), // TODO:
-        Event::Stopped(event) => {
-            info!("STOPPED on thread {}: {:?}", event.thread_id, event.reason);
+        EventBody::stopped(event) => {
+            // TODO: Is there ever a time where this will be None?
+            let thread_id = event.thread_id.unwrap();
+            info!(
+                "[{}] STOPPED [{:?}]",
+                thread_id,
+                event.description.as_ref().unwrap_or(&event.reason)
+            );
 
-            state.current_thread = event.thread_id;
-            state.stopped_threads.insert(event.thread_id, event.reason);
-            state.all_threads_stopped = event.all_threads_stopped;
+            state.current_thread = thread_id;
+            state.stopped_threads.insert(thread_id, event.reason);
+            state.all_threads_stopped = event.all_threads_stopped.unwrap_or_default();
 
             // Request threads.
             // This sets off a chain reaction of events to get all of the info
             // we need.
-            adapter.send_request(Request::Threads).await?;
+            adapter
+                .send_request(RequestArguments::threads(None))
+                .await?;
         }
-        Event::Thread(event) => {
-            info!("New thread started: {}", event.thread_id);
-            match event.reason {
-                ThreadReason::Started => {
+        EventBody::thread(event) => {
+            info!("[{}] NEW", event.thread_id);
+            match event.reason.as_str() {
+                "started" => {
                     state.threads.push(Thread {
                         id: event.thread_id,
                         // This will be replaced with the actual names in the Threads request
                         name: format!("{}", event.thread_id),
                     });
                 }
-                ThreadReason::Exited => {
+                "exited" => {
                     if let Some((i, _)) = state
                         .threads
                         .iter()
                         .find_position(|thread| thread.id == event.thread_id)
                     {
                         state.threads.remove(i);
-                        state.stopped_threads.remove(&(i as u32));
+                        state.stopped_threads.remove(&(i as i64));
                     }
                 }
+                reason => error!("Unhandled thread reason: '{reason}"),
             };
 
             actions.push(Action::Redraw);
         }
+        EventBody::breakpoint(_) => (),
+        EventBody::capabilities(_) => (),
+        EventBody::terminated(_) => (),
+        EventBody::invalidated(_) => (),
     };
 
     Ok(actions)
@@ -255,24 +268,22 @@ async fn handle_event(
 
 async fn handle_request(
     adapter: &mut Adapter,
-    payload: RequestPayload,
+    request: RequestArguments,
+    seq: u32,
     debugee_tx: UnboundedSender<String>,
 ) -> Result<Vec<Action>> {
-    adapter.update_seq(payload.seq);
-
     // The only "reverse request" in the DAP is RunInTerminal
-    if let Request::RunInTerminal(mut req) = payload.request {
-        debug!("{:?}", req.args);
-        let mut child = match req.kind {
-            RunInTerminalKind::External => {
+    if let RequestArguments::runInTerminal(mut request) = request {
+        let mut child = match request.kind.as_deref() {
+            Some("external") => {
                 let mut cmd = adapter.config.term_cmd.clone();
-                cmd.append(&mut req.args);
+                cmd.append(&mut request.args);
                 Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn()
             }
             // SAFETY: We are simply calling setsid(), which is a libc function
-            RunInTerminalKind::Integrated => unsafe {
-                Command::new(req.args[0].clone())
-                    .args(req.args[1..].to_vec())
+            Some("integrated") | None => unsafe {
+                Command::new(request.args[0].clone())
+                    .args(request.args[1..].to_vec())
                     .stdin(Stdio::null())
                     .stderr(Stdio::null())
                     .stdout(Stdio::piped())
@@ -286,21 +297,24 @@ async fn handle_request(
                     })
                     .spawn()
             },
+            Some(kind) => {
+                bail!("Unable to start debugee: unrecognized runInTerminal kind '{kind}'")
+            }
         }?;
 
         adapter
             .send_response(
-                payload.seq,
+                seq,
                 true,
                 None,
-                Response::RunInTerminal(RunInTerminalResponse {
-                    process_id: child.id(),
+                ResponseBody::runInTerminal(RunInTerminalResponseBody {
+                    process_id: child.id().map(|id| id as i64),
                     shell_process_id: None,
                 }),
             )
             .await?;
 
-        if let RunInTerminalKind::Integrated = req.kind {
+        if let Some("integrated") | None = request.kind.as_deref() {
             // Send stdout to main loop
             let mut stdout = FramedRead::new(
                 child
@@ -325,111 +339,132 @@ async fn handle_request(
 async fn handle_response(
     state: &mut State,
     adapter: &mut Adapter,
-    payload: ResponsePayload,
+    response: Response,
 ) -> Result<Vec<Action>> {
-    adapter.update_seq(payload.seq);
-
     // Get the request that triggered this response
-    let req = adapter.get_request(payload.request_seq);
+    let req = adapter.get_request(response.request_seq);
 
     let mut actions = vec![];
 
-    match payload.response {
-        Response::ConfigurationDone => (),
-        Response::Continue(_) => (),
-        Response::Initialize(capabilities) => {
-            // Save capabilities to Adapter
-            adapter.capabilities = Some(capabilities);
+    match response.result {
+        ResponseResult::Success { body } => {
+            match body {
+                ResponseBody::configurationDone => (),
+                ResponseBody::continue_(_) => (),
+                ResponseBody::initialize(capabilities) => {
+                    // Save capabilities to Adapter
+                    adapter.capabilities = Some(capabilities);
 
-            // Send launch request
-            // This differs from how the DAP event order is specified on the DAP website
-            // See https://github.com/microsoft/vscode/issues/4902#issuecomment-368583522
-            let launch_args = adapter.config.launch_args.clone();
-            adapter
-                .send_request(Request::Launch(LaunchArgs {
-                    no_debug: false,
-                    restart: None,
-                    args: Some(launch_args),
-                }))
-                .await?;
-        }
-        Response::Launch => {
-            if payload.success {
-            } else {
-                error!(
-                    "Could not launch debug adapter: {}",
-                    payload.message.unwrap_or_default()
-                );
-            }
-        }
-        Response::RunInTerminal(_) => (),
-        Response::Scopes(res) => {
-            if let Some(Request::Scopes(req)) = req {
-                for scope in &res.scopes {
+                    // Send launch request
+                    // This differs from how the DAP event order is specified on the DAP website
+                    // See https://github.com/microsoft/vscode/issues/4902#issuecomment-368583522
+                    let launch_args = adapter.config.launch_args.clone();
                     adapter
-                        .send_request(Request::Variables(VariablesArgs {
-                            variables_reference: scope.variables_reference,
-                            filter: None,
-                            start: None,
-                            count: None,
-                            format: None,
-                        }))
+                        .send_request(RequestArguments::launch(Either::Second(launch_args)))
                         .await?;
                 }
+                ResponseBody::launch => (),
+                ResponseBody::runInTerminal(_) => (),
+                ResponseBody::scopes(res) => {
+                    if let Some(RequestArguments::scopes(req)) = req {
+                        for scope in &res.scopes {
+                            adapter
+                                .send_request(RequestArguments::variables(VariablesArguments {
+                                    variables_reference: scope.variables_reference,
+                                    filter: None,
+                                    start: None,
+                                    count: None,
+                                    format: None,
+                                }))
+                                .await?;
+                        }
 
-                state.scopes.insert(req.frame_id, res.scopes);
-            }
-        }
-        Response::StackTrace(res) => {
-            if let Some(Request::StackTrace(req)) = req {
-                if req.thread_id == state.current_thread {
-                    // Set current stack frame to topmost of this thread
-                    state.current_stack_frame = res
-                        .stack_frames
-                        .first()
-                        .map(|frame| frame.id)
-                        .unwrap_or_default();
-                    // Request scopes for current stack frame
-                    adapter
-                        .send_request(Request::Scopes(ScopesArgs {
-                            frame_id: state.current_stack_frame,
-                        }))
-                        .await?;
+                        state.scopes.insert(req.frame_id, res.scopes);
+                    }
                 }
-                // Add to state
-                state.stack_frames.insert(req.thread_id, res.stack_frames);
-            }
-        }
-        Response::StepIn => (),
-        Response::Threads(res) => {
-            // Update the stored threads
-            let threads = &res.threads;
-            state.threads = threads.clone();
+                ResponseBody::stackTrace(res) => {
+                    if let Some(RequestArguments::stackTrace(req)) = req {
+                        if req.thread_id == state.current_thread {
+                            // Set current stack frame to topmost of this thread
+                            state.current_stack_frame = res
+                                .stack_frames
+                                .first()
+                                .map(|frame| frame.id)
+                                .unwrap_or_default();
+                            // Request scopes for current stack frame
+                            adapter
+                                .send_request(RequestArguments::scopes(ScopesArguments {
+                                    frame_id: state.current_stack_frame,
+                                }))
+                                .await?;
+                        }
+                        // Add to state
+                        state.stack_frames.insert(req.thread_id, res.stack_frames);
+                    }
+                }
+                ResponseBody::stepIn => (),
+                ResponseBody::threads(res) => {
+                    // Update the stored threads
+                    let threads = &res.threads;
+                    state.threads = threads.clone();
 
-            // Request stack frames for the current thread
-            if state
-                .threads
-                .iter()
-                .any(|thread| thread.id == state.current_thread)
-            {
-                adapter
-                    .send_request(Request::StackTrace(StackTraceArgs {
-                        thread_id: state.current_thread,
-                        start_frame: None,
-                        levels: None,
-                        format: None,
-                    }))
-                    .await?;
-            }
+                    // Request stack frames for the current thread
+                    if state
+                        .threads
+                        .iter()
+                        .any(|thread| thread.id == state.current_thread)
+                    {
+                        adapter
+                            .send_request(RequestArguments::stackTrace(StackTraceArguments {
+                                thread_id: state.current_thread,
+                                start_frame: None,
+                                levels: None,
+                                format: None,
+                            }))
+                            .await?;
+                    }
+                }
+                ResponseBody::variables(res) => {
+                    if let Some(RequestArguments::variables(req)) = req {
+                        state
+                            .variables
+                            .insert(req.variables_reference, res.variables);
+                    }
+                }
+                ResponseBody::Async => todo!(),
+                ResponseBody::cancel => todo!(),
+                ResponseBody::attach => todo!(),
+                ResponseBody::setBreakpoints(_) => todo!(),
+                ResponseBody::setFunctionBreakpoints(_) => todo!(),
+                ResponseBody::setExceptionBreakpoints => todo!(),
+                ResponseBody::pause => todo!(),
+                ResponseBody::next => todo!(),
+                ResponseBody::stepOut => todo!(),
+                ResponseBody::stepBack => todo!(),
+                ResponseBody::reverseContinue => todo!(),
+                ResponseBody::source(_) => todo!(),
+                ResponseBody::completions(_) => todo!(),
+                ResponseBody::gotoTargets(_) => todo!(),
+                ResponseBody::goto => todo!(),
+                ResponseBody::restartFrame => todo!(),
+                ResponseBody::evaluate(_) => todo!(),
+                ResponseBody::setVariable(_) => todo!(),
+                ResponseBody::dataBreakpointInfo(_) => todo!(),
+                ResponseBody::setDataBreakpoints(_) => todo!(),
+                ResponseBody::readMemory(_) => todo!(),
+                ResponseBody::writeMemory(_) => todo!(),
+                ResponseBody::terminate => todo!(),
+                ResponseBody::disconnect => todo!(),
+            };
         }
-        Response::Variables(res) => {
-            if let Some(Request::Variables(req)) = req {
-                state
-                    .variables
-                    .insert(req.variables_reference, res.variables);
-            }
+        ResponseResult::Error {
+            command,
+            message,
+            show_user,
+        } => {
+            error!("'{command}' response failure: {message}");
         }
-    };
+    }
 
     if adapter.num_requests() == 0 {
         actions.push(Action::Redraw);

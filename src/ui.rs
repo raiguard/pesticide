@@ -1,5 +1,5 @@
 use crate::controller::Action;
-use crate::dap_types::*;
+use crate::dap::*;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
 use crossterm::execute;
@@ -7,8 +7,9 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use itertools::Itertools;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::io::Stdout;
+use std::path::PathBuf;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Corner, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
@@ -26,7 +27,7 @@ pub struct Ui {
 
     // Call stack
     call_stack_list: ListStateWithData<CallStackItemKind>,
-    expanded_threads: HashSet<u32>,
+    expanded_threads: HashSet<i64>,
 
     // Variables
     variables_list: ListStateWithData<VariablesItemKind>,
@@ -87,15 +88,15 @@ impl Ui {
                                 match focused_line {
                                     VariablesItemKind::Scope(_, reference) => {
                                         if state.variables.get(reference).is_none() {
-                                            actions.push(Action::Request(Request::Variables(
-                                                VariablesArgs {
+                                            actions.push(Action::Request(
+                                                RequestArguments::variables(VariablesArguments {
                                                     variables_reference: *reference,
                                                     filter: None,
                                                     start: None,
                                                     count: None,
                                                     format: None,
-                                                },
-                                            )))
+                                                }),
+                                            ))
                                         }
                                     }
                                     VariablesItemKind::Variable(parent_ref, index) => {
@@ -109,16 +110,18 @@ impl Ui {
                                                     .variables
                                                     .contains_key(&variable.variables_reference)
                                             {
-                                                actions.push(Action::Request(Request::Variables(
-                                                    VariablesArgs {
-                                                        variables_reference: variable
-                                                            .variables_reference,
-                                                        filter: None,
-                                                        start: None,
-                                                        count: None,
-                                                        format: None,
-                                                    },
-                                                )))
+                                                actions.push(Action::Request(
+                                                    RequestArguments::variables(
+                                                        VariablesArguments {
+                                                            variables_reference: variable
+                                                                .variables_reference,
+                                                            filter: None,
+                                                            start: None,
+                                                            count: None,
+                                                            format: None,
+                                                        },
+                                                    ),
+                                                ))
                                             }
                                         }
                                     }
@@ -136,14 +139,14 @@ impl Ui {
                                     } else {
                                         self.expanded_threads.insert(*thread_id);
                                         if state.stack_frames.get(thread_id).is_none() {
-                                            actions.push(Action::Request(Request::StackTrace(
-                                                StackTraceArgs {
+                                            actions.push(Action::Request(
+                                                RequestArguments::stackTrace(StackTraceArguments {
                                                     thread_id: *thread_id,
                                                     start_frame: None,
                                                     levels: None,
                                                     format: None,
-                                                },
-                                            )));
+                                                }),
+                                            ));
                                         }
                                     }
                                 }
@@ -232,18 +235,20 @@ impl Ui {
                     FocusedWidget::DebugConsole => (),
                 },
                 // Adapter requests
-                KeyCode::Char('c') => {
-                    actions.push(Action::Request(Request::Continue(ContinueArgs {
+                KeyCode::Char('c') => actions.push(Action::Request(RequestArguments::continue_(
+                    ContinueArguments {
                         thread_id: state.current_thread,
-                        single_thread: true,
+                        single_thread: Some(true),
+                    },
+                ))),
+                KeyCode::Char('i') => {
+                    actions.push(Action::Request(RequestArguments::stepIn(StepInArguments {
+                        thread_id: state.current_thread,
+                        single_thread: Some(true),
+                        target_id: None,
+                        granularity: Some(SteppingGranularity::Line),
                     })))
                 }
-                KeyCode::Char('i') => actions.push(Action::Request(Request::StepIn(StepInArgs {
-                    thread_id: state.current_thread,
-                    single_thread: true,
-                    target_id: None,
-                    granularity: SteppingGranularity::Line,
-                }))),
                 // Quit
                 KeyCode::Char('q') => actions.push(Action::Quit),
                 _ => (),
@@ -262,7 +267,7 @@ impl Ui {
         if let Some(scopes) = state.scopes.get(&state.current_stack_frame) {
             for (scope_index, scope) in scopes.iter().enumerate() {
                 let scope_ident =
-                    VariablesItemKind::Scope(scope_index as u32, scope.variables_reference);
+                    VariablesItemKind::Scope(scope_index as i64, scope.variables_reference);
                 let scope_expanded = self.expanded_variables.contains(&scope_ident);
 
                 variables_disp.push(ListItem::new(Span::styled(
@@ -326,27 +331,7 @@ impl Ui {
                 let reason = state
                     .stopped_threads
                     .get(&thread.id)
-                    .or(if state.all_threads_stopped {
-                        Some(&StoppedReason::Pause)
-                    } else {
-                        None
-                    })
-                    .map(|reason| {
-                        match reason {
-                            StoppedReason::Step => "Paused on step",
-                            StoppedReason::Breakpoint => "Paused on breakpoint",
-                            StoppedReason::Exception => "Paused on exception",
-                            StoppedReason::Pause => "Paused",
-                            StoppedReason::Entry => "Paused on entry",
-                            StoppedReason::Goto => "Paused on goto",
-                            StoppedReason::FunctionBreakpoint => "Paused on function breakpoint",
-                            StoppedReason::DataBreakpoint => "Paused on data breakpoint",
-                            StoppedReason::InstructionBreakpoint => {
-                                "Paused on instruction breakpoint"
-                            }
-                        }
-                        .to_string()
-                    })
+                    .cloned()
                     .unwrap_or_else(|| String::from("Running"));
                 stack_frames.push(ListItem::new(Spans::from(vec![
                     Span::styled(
@@ -361,7 +346,7 @@ impl Ui {
                         ),
                         Style::default().fg(Color::Blue),
                     ),
-                    Span::styled(reason.to_string(), Style::default().fg(Color::White)),
+                    Span::styled(reason, Style::default().fg(Color::White)),
                 ])));
                 stacktrace_list.push(CallStackItemKind::Thread(thread.id));
 
@@ -389,6 +374,7 @@ impl Ui {
                                 let name = if let Some(name) = &source.name {
                                     name.clone()
                                 } else if let Some(path) = &source.path {
+                                    let path = PathBuf::from(path);
                                     path.file_name()
                                         .and_then(|name| name.to_str())
                                         .map(|name| name.to_string())
@@ -457,14 +443,14 @@ fn walk_variables(
     state: &crate::controller::State,
     variables_disp: &mut Vec<ListItem>,
     variables_list: &mut Vec<VariablesItemKind>,
-    (indent, variables_reference): (usize, u32),
+    (indent, variables_reference): (usize, i64),
 ) {
     if let Some(variables) = state.variables.get(&variables_reference) {
         for (i, variable) in variables.iter().enumerate() {
             let has_children = variable.variables_reference > 0;
             let expanded = ui
                 .expanded_variables
-                .contains(&VariablesItemKind::Variable(variables_reference, i as u32));
+                .contains(&VariablesItemKind::Variable(variables_reference, i as i64));
             variables_disp.push(ListItem::new(Spans::from(vec![
                 Span::styled(
                     format!(
@@ -482,7 +468,7 @@ fn walk_variables(
                 ),
                 Span::styled(variable.value.clone(), Style::default().fg(Color::White)),
             ])));
-            variables_list.push(VariablesItemKind::Variable(variables_reference, i as u32));
+            variables_list.push(VariablesItemKind::Variable(variables_reference, i as i64));
 
             if has_children && expanded {
                 walk_variables(
@@ -508,17 +494,17 @@ enum FocusedWidget {
 #[derive(Clone, Eq, PartialEq, Hash)]
 enum VariablesItemKind {
     // Scope index and variables reference
-    Scope(u32, u32),
+    Scope(i64, i64),
     // Parent variables reference and variable index
-    Variable(u32, u32),
+    Variable(i64, i64),
 }
 
 #[derive(PartialEq)]
 enum CallStackItemKind {
     // Thread ID
-    Thread(u32),
+    Thread(i64),
     // Thread ID and stack frame ID
-    StackFrame(u32, u32),
+    StackFrame(i64, i64),
 }
 
 /// Wrapper for `ListState` that contains associated data.
