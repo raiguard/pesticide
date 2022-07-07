@@ -199,6 +199,7 @@ impl State {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Action {
     Quit,
     Redraw,

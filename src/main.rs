@@ -85,10 +85,10 @@ async fn main() -> Result<()> {
     let pipe_path = pipe_path.join(&session);
 
     if let Some(request) = cli.request {
+        // Write command to the session's FIFO
         if !pipe_path.exists() {
             bail!("Session '{}' is not active", session);
         }
-        // Write command to the session's FIFO
         tokio::fs::write(pipe_path, request).await?;
         Ok(())
     } else {

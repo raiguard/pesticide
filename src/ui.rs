@@ -513,7 +513,7 @@ enum CallStackItemKind {
 /// wrapper stores the state and representations of the data in each line.
 ///
 /// Intended use is for the stored data to "point to" the actual data. For
-/// example, store a list of `usize` that correspond to variables references,
+/// example, store a list of `i64` that correspond to variables references,
 /// instead of storing the actual variables references.
 struct ListStateWithData<T> {
     items: Vec<T>,
