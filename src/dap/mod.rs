@@ -163,7 +163,7 @@ pub enum EventBody {
     continued(ContinuedEventBody),
     exited(ExitedEventBody),
     module(ModuleEventBody),
-    terminated(TerminatedEventBody),
+    terminated(Option<TerminatedEventBody>),
     thread(ThreadEventBody),
     invalidated(InvalidatedEventBody),
     stopped(StoppedEventBody),

@@ -245,7 +245,10 @@ async fn handle_event(
         }
         EventBody::breakpoint(_) => (),
         EventBody::capabilities(_) => (),
-        EventBody::terminated(_) => (),
+        EventBody::terminated(_) => {
+            // TODO: Handle `restart` flag
+            actions.push(Action::Quit);
+        }
         EventBody::invalidated(_) => (),
     };
 
