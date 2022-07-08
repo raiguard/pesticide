@@ -83,11 +83,12 @@ impl Adapter {
 
         self.requests.insert(seq, request.clone());
 
-        self.write(ProtocolMessage {
-            seq,
-            type_: ProtocolMessageType::Request(request),
-        })
-        .await?;
+        self.stdin
+            .send(ProtocolMessage {
+                seq,
+                type_: ProtocolMessageType::Request(request),
+            })
+            .await?;
 
         Ok(())
     }
@@ -100,15 +101,16 @@ impl Adapter {
     ) -> Result<()> {
         let seq = self.next_seq();
 
-        self.write(ProtocolMessage {
-            seq,
-            type_: ProtocolMessageType::Response(Response {
-                request_seq,
-                success,
-                result: ResponseResult::Success { body: response },
-            }),
-        })
-        .await?;
+        self.stdin
+            .send(ProtocolMessage {
+                seq,
+                type_: ProtocolMessageType::Response(Response {
+                    request_seq,
+                    success,
+                    result: ResponseResult::Success { body: response },
+                }),
+            })
+            .await?;
 
         Ok(())
     }
@@ -125,16 +127,6 @@ impl Adapter {
         if new_seq >= self.next_seq {
             self.next_seq = new_seq + 1
         }
-    }
-
-    async fn write(&mut self, msg: ProtocolMessage) -> Result<()> {
-        debug!(
-            "[DEBUG ADAPTER] << {}",
-            serde_json::to_string(&msg).unwrap()
-        );
-        self.stdin.send(msg).await?;
-
-        Ok(())
     }
 
     fn next_seq(&mut self) -> u32 {
