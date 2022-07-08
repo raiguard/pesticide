@@ -94,7 +94,7 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
             }
             // Debugee stdout
             Some(line) = debugee_rx.recv() => {
-                trace!("Received debugee stdout: {}", line);
+                trace!("debugee: {}", line);
                 state.console.push(line);
                 actions.push(Action::Redraw);
             }
@@ -183,7 +183,7 @@ async fn handle_event(
                 state.stopped_threads.remove(&event.thread_id);
             }
         }
-        EventBody::exited(_) => {
+        EventBody::exited(_) | EventBody::terminated(_) => {
             actions.push(Action::Quit);
         }
         EventBody::module(_) => (), // TODO:
@@ -245,10 +245,6 @@ async fn handle_event(
         }
         EventBody::breakpoint(_) => (),
         EventBody::capabilities(_) => (),
-        EventBody::terminated(_) => {
-            // TODO: Handle `restart` flag
-            actions.push(Action::Quit);
-        }
         EventBody::invalidated(_) => (),
     };
 
@@ -313,8 +309,6 @@ async fn handle_request(
             );
             tokio::spawn(async move {
                 while let Some(Ok(line)) = stdout.next().await {
-                    // FIXME: Debugee is not sending STDOUT until it ends?
-                    trace!("DEBUGEE SENT STDOUT: {}", line);
                     debugee_tx.send(line).unwrap();
                 }
             });
