@@ -11,9 +11,9 @@ class TestClass(object):
   def DoSomething(self):
     for i in range(0, 100):
       if i < self._var:
-        print('{0} is less than the value'.format(i))
+        print('{0} is less than the value'.format(i), flush=True)
       else:
-        print('{0} might be more'.format(i))
+        print('{0} might be more'.format(i), flush=True)
 
     raise ValueError('Done')
 
