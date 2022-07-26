@@ -1,6 +1,7 @@
-use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap::*;
+use crate::kak::{KakCmd, Kakoune};
+use crate::{adapter::Adapter, kak};
 use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
@@ -12,7 +13,7 @@ use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::codec::{FramedRead, LinesCodec};
 
-pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
+pub async fn run(config_path: PathBuf, pipe_path: PathBuf, session: String) -> Result<()> {
     // Parse configuration
     // Do this first so we can display the error in the terminal
     let config = Config::new(config_path)?;
@@ -26,6 +27,9 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
 
     // Channel to read debugee stdout through
     let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // Send commands to kakoune
+    let mut kakoune = Kakoune::new(session)?;
 
     // Spin up debug adapter
     let mut adapter = Adapter::new(config)?;
@@ -112,6 +116,7 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
                     adapter.send_request(req).await?;
                 }
                 Action::Quit => break 'main,
+                Action::KakCmd(cmd) => kakoune.send(cmd).await?,
             };
         }
     }
@@ -119,6 +124,7 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf) -> Result<()> {
     trace!("Cleaning up");
     ui.destroy()?;
     adapter.quit().await?;
+    kakoune.exit().await?;
     tokio::fs::remove_file(pipe_path).await?;
 
     trace!("Cleaned up");
@@ -139,6 +145,7 @@ pub struct State {
     pub console: Vec<String>,
 
     pub threads: Vec<Thread>,
+    // Thread ID -> Stack frames
     pub stack_frames: HashMap<i64, Vec<StackFrame>>,
     pub scopes: HashMap<i64, Vec<Scope>>,
     pub variables: HashMap<i64, Vec<Variable>>,
@@ -167,6 +174,7 @@ pub enum Action {
     Quit,
     Redraw,
     Request(RequestArguments),
+    KakCmd(KakCmd),
 }
 
 async fn handle_event(
@@ -382,6 +390,19 @@ async fn handle_response(
                         }
                         // Add to state
                         state.stack_frames.insert(req.thread_id, res.stack_frames);
+
+                        // Jump to this line in editor
+                        let frames = state.stack_frames.get(&state.current_thread).unwrap();
+                        let frame = frames
+                            .iter()
+                            .find(|frame| frame.id == state.current_stack_frame)
+                            .unwrap();
+                        let source = frame.source.as_ref().unwrap();
+                        actions.push(Action::KakCmd(KakCmd::Jump {
+                            file: source.path.clone().unwrap(),
+                            line: frame.line,
+                            column: Some(frame.column),
+                        }));
                     }
                 }
                 ResponseBody::stepIn => (),

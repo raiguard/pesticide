@@ -3,7 +3,10 @@
 declare-option str pesticide_cmd "pesticide --session %val{session}"
 declare-option str-list breakpoints
 declare-option line-specs pesticide_flags
-declare-option int current_line 6
+declare-option int stackframe_line 0
+
+declare-option str breakpoint_symbol "●"
+declare-option str step_symbol "▶"
 
 ### Faces
 

@@ -1,5 +1,6 @@
 use crate::controller::Action;
 use crate::dap::*;
+use crate::kak::KakCmd;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
 use crossterm::execute;
@@ -8,8 +9,10 @@ use crossterm::terminal::{
 };
 use itertools::Itertools;
 use std::collections::HashSet;
-use std::io::Stdout;
+use std::io::{Stdout, Write};
 use std::path::PathBuf;
+use std::process::Command;
+use std::process::Stdio;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Corner, Direction, Layout};
 use tui::style::{Color, Modifier, Style};
@@ -152,7 +155,21 @@ impl Ui {
                                 }
                                 CallStackItemKind::StackFrame(thread_id, frame_id) => {
                                     state.current_thread = *thread_id;
-                                    state.current_stack_frame = *frame_id
+                                    state.current_stack_frame = *frame_id;
+
+                                    // Jump to this line in editor
+                                    let frames =
+                                        state.stack_frames.get(&state.current_thread).unwrap();
+                                    let frame = frames
+                                        .iter()
+                                        .find(|frame| frame.id == state.current_stack_frame)
+                                        .unwrap();
+                                    let source = frame.source.as_ref().unwrap();
+                                    actions.push(Action::KakCmd(KakCmd::Jump {
+                                        file: source.path.clone().unwrap(),
+                                        line: frame.line,
+                                        column: Some(frame.column),
+                                    }));
                                 }
                             }
                             actions.push(Action::Redraw);

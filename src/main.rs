@@ -39,6 +39,7 @@ mod adapter;
 mod config;
 mod controller;
 mod dap;
+mod kak;
 mod ui;
 
 #[macro_use]
@@ -104,7 +105,7 @@ async fn main() -> Result<()> {
         )?;
 
         // Run application
-        controller::run(cli.config, pipe_path).await
+        controller::run(cli.config, pipe_path, session).await
     }
 }
 
