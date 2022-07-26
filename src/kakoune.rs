@@ -53,7 +53,9 @@ impl Kakoune {
 
         // 'kak -p' will not execute until the pipe is closed, so we must spawn a new one every time...
         Command::new("kak")
+            .stderr(Stdio::null())
             .stdin(Stdio::piped())
+            .stdout(Stdio::null())
             .arg("-p")
             .arg(&self.session)
             .spawn()?
