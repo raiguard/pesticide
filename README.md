@@ -4,7 +4,9 @@ A TUI front-end for the Debug Adapter Protocol. Can be used as a standalone prog
 
 ## Status
 
-This project is in early alpha. It currently shows variables and stack traces, and somewhat shows the output of the debugee, but does not do much else.
+This project is in early alpha. It currently shows variables, the call stack, and the debugee stdout. It expects there to be a kakoune session given by `--session`, and does not have a built-in source viewer yet.
+
+Two-way comms between kakoune and pesticide are working, so it should be fairly usable soon. Then the UI code needs to be overhauled.
 
 ## Motivation
 
