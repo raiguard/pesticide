@@ -124,6 +124,7 @@ pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> R
                     adapter.send_request(req).await?;
                 }
                 Action::Quit => break 'main,
+                Action::ClearJump => kakoune.clear_jump().await?,
                 Action::JumpSource => kakoune.jump(&state).await?,
                 Action::KakCmd(cmd) => kakoune.send(cmd).await?,
             };
@@ -182,6 +183,7 @@ pub enum Action {
     Redraw,
     Request(RequestArguments),
     KakCmd(KakCmd),
+    ClearJump,
     JumpSource,
 }
 
@@ -348,7 +350,7 @@ async fn handle_response(
         ResponseResult::Success { body } => {
             match body {
                 ResponseBody::configurationDone => (),
-                ResponseBody::continue_(_) => (),
+                ResponseBody::continue_(_) => actions.push(Action::ClearJump),
                 ResponseBody::initialize(capabilities) => {
                     // Save capabilities to Adapter
                     adapter.capabilities = Some(capabilities);

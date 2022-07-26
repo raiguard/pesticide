@@ -100,12 +100,10 @@ impl Kakoune {
         let source_path = source.path.clone().unwrap();
         if let Some(jump_buffer) = &self.jump_buffer {
             if source_path != *jump_buffer {
-                self.send(KakCmd::ClearJump(jump_buffer.clone())).await?;
-                self.jump_buffer = Some(source_path.clone());
+                self.clear_jump().await?;
             }
-        } else {
-            self.jump_buffer = Some(source_path.clone());
         }
+        self.jump_buffer = Some(source_path.clone());
         self.send(KakCmd::Jump {
             file: source_path,
             line: frame.line,
@@ -113,6 +111,14 @@ impl Kakoune {
         })
         .await?;
 
+        Ok(())
+    }
+
+    pub async fn clear_jump(&mut self) -> Result<()> {
+        if let Some(jump_buffer) = &self.jump_buffer {
+            self.send(KakCmd::ClearJump(jump_buffer.clone())).await?;
+            self.jump_buffer = None;
+        }
         Ok(())
     }
 }
