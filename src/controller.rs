@@ -107,8 +107,12 @@ pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> R
                 actions.append(&mut ui.handle_input(&mut state, event)?)
             }
             // Requests from Kakoune
-            Ok(_req) = kakoune.listen() => {
-                trace!("act on received kakoune message");
+            Ok(req) = kakoune.recv() => {
+                debug!("{:#?}", req);
+                match req {
+                    KakCmd::ToggleBreakpoint { file, line, column } => todo!(),
+                    _ => ()
+                }
             }
         }
 
@@ -120,6 +124,7 @@ pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> R
                     adapter.send_request(req).await?;
                 }
                 Action::Quit => break 'main,
+                Action::JumpSource => kakoune.jump(&state).await?,
                 Action::KakCmd(cmd) => kakoune.send(cmd).await?,
             };
         }
@@ -177,6 +182,7 @@ pub enum Action {
     Redraw,
     Request(RequestArguments),
     KakCmd(KakCmd),
+    JumpSource,
 }
 
 async fn handle_event(
@@ -392,19 +398,8 @@ async fn handle_response(
                         }
                         // Add to state
                         state.stack_frames.insert(req.thread_id, res.stack_frames);
-
-                        // Jump to this line in editor
-                        let frames = state.stack_frames.get(&state.current_thread).unwrap();
-                        let frame = frames
-                            .iter()
-                            .find(|frame| frame.id == state.current_stack_frame)
-                            .unwrap();
-                        let source = frame.source.as_ref().unwrap();
-                        actions.push(Action::KakCmd(KakCmd::Jump {
-                            file: source.path.clone().unwrap(),
-                            line: frame.line,
-                            column: Some(frame.column),
-                        }));
+                        // Jump in editor
+                        actions.push(Action::JumpSource);
                     }
                 }
                 ResponseBody::stepIn => (),

@@ -154,20 +154,7 @@ impl Ui {
                                 CallStackItemKind::StackFrame(thread_id, frame_id) => {
                                     state.current_thread = *thread_id;
                                     state.current_stack_frame = *frame_id;
-
-                                    // Jump to this line in editor
-                                    let frames =
-                                        state.stack_frames.get(&state.current_thread).unwrap();
-                                    let frame = frames
-                                        .iter()
-                                        .find(|frame| frame.id == state.current_stack_frame)
-                                        .unwrap();
-                                    let source = frame.source.as_ref().unwrap();
-                                    actions.push(Action::KakCmd(KakCmd::Jump {
-                                        file: source.path.clone().unwrap(),
-                                        line: frame.line,
-                                        column: Some(frame.column),
-                                    }));
+                                    actions.push(Action::JumpSource);
                                 }
                             }
                             actions.push(Action::Redraw);

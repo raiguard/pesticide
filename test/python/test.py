@@ -1,4 +1,5 @@
 from threading import Thread
+from other import printother
 
 class TestClass(object):
   def __init__(self, value):
@@ -9,7 +10,7 @@ class TestClass(object):
       pass
 
   def DoSomething(self):
-    for i in range(0, 100):
+    for i in range(0, 5):
       if i < self._var:
         print('{0} is less than the value'.format(i), flush=True)
       else:
@@ -18,7 +19,9 @@ class TestClass(object):
     raise ValueError('Done')
 
 def task():
-  t = TestClass(18)
+  t = TestClass(3)
+
+  printother()
 
   t._var = 99
   t.DoSomething()
