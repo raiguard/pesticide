@@ -42,6 +42,7 @@ impl Kakoune {
                     "evaluate-commands -try-client %opt{{jumpclient}} %{{
                         edit {0} {1} {2}
                         set-option buffer pesticide_flags %val{{timestamp}} \"{1}|{{StepIndicator}}%opt{{step_symbol}}\"
+                        add-highlighter -override buffer/step_line line {1} StepLine
                     }}",
                     file, line, column.unwrap_or(1)
                 )

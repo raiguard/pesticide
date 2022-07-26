@@ -1,9 +1,7 @@
 ### Options
 
 declare-option str pesticide_cmd "pesticide --session %val{session}"
-declare-option str-list breakpoints
 declare-option line-specs pesticide_flags
-declare-option int stackframe_line 0
 
 declare-option str breakpoint_symbol "●"
 declare-option str step_symbol "▶"
@@ -12,6 +10,7 @@ declare-option str step_symbol "▶"
 
 set-face global Breakpoint Error
 set-face global StepIndicator yellow
+set-face global StepLine default
 
 ### Highlighters
 
