@@ -39,7 +39,7 @@ mod adapter;
 mod config;
 mod controller;
 mod dap;
-mod kak;
+mod kakoune;
 mod ui;
 
 #[macro_use]
@@ -49,6 +49,8 @@ use anyhow::{bail, Result};
 use pico_args::Arguments;
 use std::fs::File;
 use std::path::PathBuf;
+use tokio::io::AsyncWriteExt;
+use tokio::net::UnixStream;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -77,16 +79,18 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| std::process::id().to_string());
 
     // Determine named pipe path
-    let pipe_path = dirs::runtime_dir()
+    let sock_path = dirs::runtime_dir()
         .expect("Could not get runtime directory")
         .join("pesticide");
-    if !pipe_path.exists() {
-        tokio::fs::create_dir_all(&pipe_path).await?;
+    if !sock_path.exists() {
+        tokio::fs::create_dir_all(&sock_path).await?;
     }
-    let pipe_path = pipe_path.join(&session);
+    let sock_path = sock_path.join(&session);
 
-    if let Some(_request) = cli.request {
-        bail!("--request is not yet implemented")
+    if let Some(request) = cli.request {
+        let mut socket = UnixStream::connect(&sock_path).await?;
+        socket.write_all(request.as_bytes()).await?;
+        Ok(())
     } else {
         // Create log file
         let log = dirs::data_dir()
@@ -105,7 +109,7 @@ async fn main() -> Result<()> {
         )?;
 
         // Run application
-        controller::run(cli.config, pipe_path, session).await
+        controller::run(cli.config, sock_path, session).await
     }
 }
 

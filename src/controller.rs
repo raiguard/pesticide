@@ -1,7 +1,7 @@
+use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap::*;
-use crate::kak::{KakCmd, Kakoune};
-use crate::{adapter::Adapter, kak};
+use crate::kakoune::{KakCmd, Kakoune};
 use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
@@ -13,7 +13,7 @@ use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::codec::{FramedRead, LinesCodec};
 
-pub async fn run(config_path: PathBuf, pipe_path: PathBuf, session: String) -> Result<()> {
+pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> Result<()> {
     // Parse configuration
     // Do this first so we can display the error in the terminal
     let config = Config::new(config_path)?;
@@ -28,8 +28,8 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf, session: String) -> R
     // Channel to read debugee stdout through
     let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    // Send commands to kakoune
-    let mut kakoune = Kakoune::new(session)?;
+    // Kakoune comms
+    let mut kakoune = Kakoune::new(session, sock_path).await?;
 
     // Spin up debug adapter
     let mut adapter = Adapter::new(config)?;
@@ -106,6 +106,10 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf, session: String) -> R
             Some(Ok(event)) = ui.input_stream.next() => {
                 actions.append(&mut ui.handle_input(&mut state, event)?)
             }
+            // Requests from Kakoune
+            Ok(_req) = kakoune.listen() => {
+                trace!("act on received kakoune message");
+            }
         }
 
         // Dispatch needed actions
@@ -124,9 +128,7 @@ pub async fn run(config_path: PathBuf, pipe_path: PathBuf, session: String) -> R
     trace!("Cleaning up");
     ui.destroy()?;
     adapter.quit().await?;
-    kakoune.exit().await?;
-    tokio::fs::remove_file(pipe_path).await?;
-
+    kakoune.quit().await?;
     trace!("Cleaned up");
 
     Ok(())

@@ -1,6 +1,6 @@
 use crate::controller::Action;
 use crate::dap::*;
-use crate::kak::KakCmd;
+use crate::kakoune::KakCmd;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
 use crossterm::execute;
@@ -9,10 +9,8 @@ use crossterm::terminal::{
 };
 use itertools::Itertools;
 use std::collections::HashSet;
-use std::io::{Stdout, Write};
+use std::io::Stdout;
 use std::path::PathBuf;
-use std::process::Command;
-use std::process::Stdio;
 use tui::backend::CrosstermBackend;
 use tui::layout::{Constraint, Corner, Direction, Layout};
 use tui::style::{Color, Modifier, Style};

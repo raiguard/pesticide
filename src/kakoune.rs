@@ -1,19 +1,38 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::{io::AsyncWriteExt, process::Command};
+use tokio::fs;
+use tokio::io;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
+use tokio::process::Command;
 
 pub struct Kakoune {
     session: String,
+    socket: UnixListener,
+    sock_path: PathBuf,
 }
 
 impl Kakoune {
-    pub fn new(session: String) -> Result<Self> {
-        Ok(Self { session })
+    pub async fn new(session: String, sock_path: PathBuf) -> Result<Self> {
+        let socket = UnixListener::bind(&sock_path)?;
+        Ok(Self {
+            session,
+            socket,
+            sock_path,
+        })
     }
 
-    pub async fn exit(&mut self) -> Result<()> {
-        // self.child.kill().await?;
-        Ok(())
+    pub async fn quit(&mut self) -> Result<(), io::Error> {
+        fs::remove_file(&self.sock_path).await
+    }
+
+    pub async fn listen(&mut self) -> Result<String> {
+        let (mut connection, _) = self.socket.accept().await?;
+        let mut req = String::new();
+        connection.read_to_string(&mut req).await?;
+        debug!("--> {req}");
+        Ok(req)
     }
 
     pub async fn send(&mut self, command: KakCmd) -> Result<()> {
