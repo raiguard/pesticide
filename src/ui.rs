@@ -1,6 +1,5 @@
 use crate::controller::Action;
 use crate::dap::*;
-use crate::kakoune::KakCmd;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
 use crossterm::execute;
@@ -154,7 +153,7 @@ impl Ui {
                                 CallStackItemKind::StackFrame(thread_id, frame_id) => {
                                     state.current_thread = *thread_id;
                                     state.current_stack_frame = *frame_id;
-                                    actions.push(Action::JumpSource);
+                                    actions.push(Action::Jump);
                                 }
                             }
                             actions.push(Action::Redraw);

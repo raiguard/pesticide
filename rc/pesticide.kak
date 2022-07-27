@@ -1,7 +1,8 @@
 ### Options
 
 declare-option str pesticide_cmd "pesticide --session %val{session}"
-declare-option line-specs pesticide_flags
+declare-option line-specs breakpoints
+declare-option line-specs step_indicator
 
 declare-option str breakpoint_symbol "●"
 declare-option str step_symbol "▶"
@@ -10,12 +11,12 @@ declare-option str step_symbol "▶"
 
 set-face global Breakpoint Error
 set-face global StepIndicator yellow
-set-face global StepLine default
 
 ### Highlighters
 
 hook global BufCreate .* %{
-    add-highlighter buffer/ flag-lines default pesticide_flags
+    add-highlighter buffer/ flag-lines default breakpoints
+    add-highlighter buffer/ flag-lines default step_indicator
 }
 
 ### Commands
@@ -23,7 +24,14 @@ hook global BufCreate .* %{
 define-command pesticide-toggle-breakpoint \
 -docstring "Toggle a breakpoint on the current line" \
 %{
-    evaluate-commands %sh{
-        $kak_opt_pesticide_cmd --request '{"command": "toggle_breakpoint", "file": "'"$kak_bufname"'", "line": '"$kak_cursor_line"'}'
+    nop %sh{
+        $kak_opt_pesticide_cmd --request '{"cmd": "toggle_breakpoint", "file": "'"$kak_buffile"'", "line": '"$kak_cursor_line"', "column": '"$kak_cursor_column"'}'
     }
 }
+
+declare-user-mode pesticide
+map global pesticide t ": pesticide-toggle-breakpoint<ret>" -docstring "toggle breakpoint"
+
+# TEMPORARY:
+map global user d ": enter-user-mode pesticide<ret>"
+map global user D ": enter-user-mode -lock pesticide<ret>"

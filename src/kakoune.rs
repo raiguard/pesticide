@@ -1,3 +1,4 @@
+use crate::controller::State;
 use anyhow::Result;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -7,13 +8,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::process::Command;
 
-use crate::controller::State;
-
 pub struct Kakoune {
     session: String,
     socket: UnixListener,
     sock_path: PathBuf,
-    jump_buffer: Option<String>,
+    current_jump: Option<(String, i64)>,
 }
 
 impl Kakoune {
@@ -23,19 +22,17 @@ impl Kakoune {
             session,
             socket,
             sock_path,
-            jump_buffer: None,
+            current_jump: None,
         })
     }
 
     pub async fn quit(&mut self) -> Result<()> {
-        if let Some(jump_buffer) = &self.jump_buffer {
-            self.send(KakCmd::ClearJump(jump_buffer.clone())).await?;
-        }
+        self.clear_jump().await?;
         fs::remove_file(&self.sock_path).await?;
         Ok(())
     }
 
-    pub async fn recv(&mut self) -> Result<KakCmd> {
+    pub async fn recv(&mut self) -> Result<KakRequest> {
         let (mut connection, _) = self.socket.accept().await?;
         let mut req = String::new();
         connection.read_to_string(&mut req).await?;
@@ -43,35 +40,8 @@ impl Kakoune {
         Ok(serde_json::from_str(&req)?)
     }
 
-    pub async fn send(&mut self, command: KakCmd) -> Result<()> {
-        if let Some(cmd) = match command {
-            KakCmd::ClearJump(file) => {
-                Some(format!(
-                    "evaluate-commands %{{
-                        edit {0}
-                        set-option buffer pesticide_flags %val{{timestamp}}
-                        remove-highlighter buffer/step_line
-                    }}",
-                    file
-                ))
-            }
-            KakCmd::Jump { file, line, column } => {
-                Some(format!(
-                    "evaluate-commands -try-client %opt{{jumpclient}} %{{
-                        edit {0} {1} {2}
-                        set-option buffer pesticide_flags %val{{timestamp}} \"{1}|{{StepIndicator}}%opt{{step_symbol}}\"
-                        add-highlighter -override buffer/step_line line {1} StepLine
-                    }}",
-                    file, line, column.unwrap_or(1)
-                ))
-            }
-            KakCmd::UpdateFlags => {
-                todo!()
-            }
-            // Not all KakCmd's are sent to the editor
-            _ => None
-        } {
-        debug!("<-- {}", cmd);
+    pub async fn send(&mut self, command: String) -> Result<()> {
+        debug!("<-- {}", command);
         // 'kak -p' will not execute until the pipe is closed, so we must spawn a new one every time...
         Command::new("kak")
             .stderr(Stdio::null())
@@ -83,9 +53,8 @@ impl Kakoune {
             .stdin
             .take()
             .unwrap()
-            .write_all(cmd.as_bytes())
+            .write_all(command.as_bytes())
             .await?;
-        }
 
         Ok(())
     }
@@ -98,45 +67,67 @@ impl Kakoune {
             .unwrap();
         let source = frame.source.as_ref().unwrap();
         let source_path = source.path.clone().unwrap();
-        if let Some(jump_buffer) = &self.jump_buffer {
-            if source_path != *jump_buffer {
-                self.clear_jump().await?;
-            }
+        if self.current_jump.is_some() && self.current_jump.as_ref().unwrap().0 != source_path {
+            self.clear_jump().await?;
         }
-        self.jump_buffer = Some(source_path.clone());
-        self.send(KakCmd::Jump {
-            file: source_path,
-            line: frame.line,
-            column: Some(frame.column),
-        })
-        .await?;
+        self.current_jump = Some((source_path.clone(), frame.line));
+        self.update_breakpoints(state).await?;
+        self.send(format!(
+            r#"evaluate-commands -try-client %opt{{jumpclient}} %{{
+                edit {0} {1}
+                set-option buffer step_indicator %val{{timestamp}} "{1}|{{StepIndicator}}%opt{{step_symbol}}"
+            }}"#,
+            source_path, frame.line,
+        )).await?;
 
         Ok(())
     }
 
     pub async fn clear_jump(&mut self) -> Result<()> {
-        if let Some(jump_buffer) = &self.jump_buffer {
-            self.send(KakCmd::ClearJump(jump_buffer.clone())).await?;
-            self.jump_buffer = None;
+        if let Some((path, _)) = &self.current_jump {
+            self.send(format!(
+                "evaluate-commands %{{
+                    edit {path}
+                    set-option buffer step_indicator %val{{timestamp}}
+                }}"
+            ))
+            .await?;
+            self.current_jump = None;
+        }
+        Ok(())
+    }
+
+    pub async fn update_breakpoints(&mut self, state: &State) -> Result<()> {
+        // Breakpoints
+        for (path, breakpoints) in &state.breakpoints {
+            self.send(format!(
+                // TODO: Use 'buffer' instead of 'edit' to avoid opening extra files
+                "evaluate-commands %{{
+                    edit {path}
+                    set-option buffer breakpoints %val{{timestamp}} {}
+                }}",
+                breakpoints
+                    .iter()
+                    .map(|breakpoint| format!(
+                        r#""{}|{{Breakpoint}}%opt{{breakpoint_symbol}}" "#,
+                        breakpoint.line
+                    ))
+                    .collect::<String>(),
+            ))
+            .await?;
         }
         Ok(())
     }
 }
 
+/// A request sent from kakoune, deserialized from JSON
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd")]
 #[serde(rename_all = "snake_case")]
-pub enum KakCmd {
-    ClearJump(String),
-    Jump {
-        file: String,
-        line: i64,
-        column: Option<i64>,
-    },
+pub enum KakRequest {
     ToggleBreakpoint {
         file: String,
         line: i64,
         column: i64,
     },
-    UpdateFlags,
 }

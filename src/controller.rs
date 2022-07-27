@@ -1,7 +1,7 @@
 use crate::adapter::Adapter;
 use crate::config::Config;
 use crate::dap::*;
-use crate::kakoune::{KakCmd, Kakoune};
+use crate::kakoune::{KakRequest, Kakoune};
 use anyhow::{anyhow, bail, Result};
 use futures_util::StreamExt;
 use itertools::Itertools;
@@ -108,10 +108,38 @@ pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> R
             }
             // Requests from Kakoune
             Ok(req) = kakoune.recv() => {
-                debug!("{:#?}", req);
                 match req {
-                    KakCmd::ToggleBreakpoint { file, line, column } => todo!(),
-                    _ => ()
+                    KakRequest::ToggleBreakpoint { file, line, column: _column } => {
+                        let source_breakpoints = state.breakpoints.entry(file.clone()).or_default();
+                        if let Some((i, _)) = source_breakpoints.iter().find_position(|breakpoint| breakpoint.line == line) {
+                            source_breakpoints.remove(i);
+                        } else {
+                            source_breakpoints.push(SourceBreakpoint {
+                                column: None,
+                                condition: None,
+                                hit_condition: None,
+                                line,
+                                log_message: None
+                            });
+                        };
+                        let req = SetBreakpointsArguments {
+                            breakpoints: Some(source_breakpoints.clone()),
+                            lines: None,
+                            source: Source {
+                                adapter_data: None,
+                                checksums: None,
+                                name: None,
+                                origin: None,
+                                path:Some(file),
+                                presentation_hint: None,
+                                source_reference: None,
+                                sources: None
+                            },
+                            source_modified: None
+                        };
+                        actions.push(Action::Request(RequestArguments::setBreakpoints(req)));
+                        actions.push(Action::UpdateBreakpoints);
+                    },
                 }
             }
         }
@@ -119,14 +147,14 @@ pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> R
         // Dispatch needed actions
         for action in actions {
             match action {
+                Action::ClearJump => kakoune.clear_jump().await?,
+                Action::Jump => kakoune.jump(&state).await?,
+                Action::Quit => break 'main,
                 Action::Redraw => ui.draw(&state)?,
                 Action::Request(req) => {
                     adapter.send_request(req).await?;
                 }
-                Action::Quit => break 'main,
-                Action::ClearJump => kakoune.clear_jump().await?,
-                Action::JumpSource => kakoune.jump(&state).await?,
-                Action::KakCmd(cmd) => kakoune.send(cmd).await?,
+                Action::UpdateBreakpoints => kakoune.update_breakpoints(&state).await?,
             };
         }
     }
@@ -157,6 +185,8 @@ pub struct State {
     pub stack_frames: HashMap<i64, Vec<StackFrame>>,
     pub scopes: HashMap<i64, Vec<Scope>>,
     pub variables: HashMap<i64, Vec<Variable>>,
+
+    pub breakpoints: HashMap<String, Vec<SourceBreakpoint>>,
 }
 
 impl State {
@@ -173,18 +203,20 @@ impl State {
             stack_frames: HashMap::new(),
             scopes: HashMap::new(),
             variables: HashMap::new(),
+
+            breakpoints: HashMap::new(),
         }
     }
 }
 
 #[allow(clippy::large_enum_variant)]
 pub enum Action {
+    ClearJump,
+    Jump,
     Quit,
     Redraw,
     Request(RequestArguments),
-    KakCmd(KakCmd),
-    ClearJump,
-    JumpSource,
+    UpdateBreakpoints,
 }
 
 async fn handle_event(
@@ -401,7 +433,7 @@ async fn handle_response(
                         // Add to state
                         state.stack_frames.insert(req.thread_id, res.stack_frames);
                         // Jump in editor
-                        actions.push(Action::JumpSource);
+                        actions.push(Action::Jump);
                     }
                 }
                 ResponseBody::stepIn => (),
@@ -436,7 +468,9 @@ async fn handle_response(
                 ResponseBody::Async => todo!(),
                 ResponseBody::cancel => todo!(),
                 ResponseBody::attach => todo!(),
-                ResponseBody::setBreakpoints(_) => todo!(),
+                ResponseBody::setBreakpoints(body) => {
+                    // actions.push(Action::
+                }
                 ResponseBody::setFunctionBreakpoints(_) => todo!(),
                 ResponseBody::setExceptionBreakpoints => todo!(),
                 ResponseBody::pause => todo!(),
