@@ -9,22 +9,18 @@ edition = "2021"
 anyhow = "1.0.57"
 bytes = "1.1.0"
 crossterm = {version = "0.23.2", features = ["event-stream"]}
-daemonize = "0.4.1"
 dirs = "4.0.0"
 futures-util = {version = "0.3.21", features = ["sink"]}
 itertools = "0.10.3"
 libc = "0.2.125"
 log = "0.4.16"
-nix = "0.24.1"
 pico-args = "0.4.2"
 regex = "1.5.5"
 schemafy = "0.6.0"
 serde = {version = "1.0.136", features = ["derive"]}
 serde_json = "1.0.79"
 simplelog = "0.12.0"
-thiserror = "1.0.31"
 tokio = {version = "1.18.2", features = ["full"]}
-tokio-stream = "0.1.8"
 tokio-util = {version = "0.7.1", features = ["codec"]}
 toml = "0.5.9"
 tui = "0.18.0"
