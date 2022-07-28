@@ -233,10 +233,10 @@ async fn handle_event(
             actions.push(Action::Quit);
         }
         EventBody::module(_) => (), // TODO:
-        EventBody::output(event) => match event.category.as_deref() {
-            Some("telemetry") => (), // IDGAF about telemetry
-            _ => info!("Adapter output event: {}", event.output),
-        },
+        EventBody::output(event) => {
+            state.console.push(event.output);
+            actions.push(Action::Redraw);
+        }
         EventBody::initialized => {
             info!("Debug adapter is initialized");
             // TODO: setBreakpoints, etc...
