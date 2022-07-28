@@ -46,6 +46,7 @@ mod ui;
 extern crate log;
 
 use anyhow::{bail, Result};
+use config::Config;
 use pico_args::Arguments;
 use std::fs::File;
 use std::path::PathBuf;
@@ -74,8 +75,10 @@ async fn main() -> Result<()> {
     if cli.request.is_some() && cli.session.is_none() {
         bail!("--request flag requires --session to be defined.");
     }
+    let config = Config::new(cli.config)?;
     let session = cli
         .session
+        .or_else(|| config.session_name.clone())
         .unwrap_or_else(|| std::process::id().to_string());
 
     // Determine named pipe path
@@ -109,7 +112,7 @@ async fn main() -> Result<()> {
         )?;
 
         // Run application
-        controller::run(cli.config, sock_path, session).await
+        controller::run(config, sock_path, session).await
     }
 }
 

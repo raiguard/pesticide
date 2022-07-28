@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use regex::{Captures, Regex};
 use serde::Deserialize;
 
@@ -9,7 +9,8 @@ pub struct Config {
     pub adapter: String,
     pub adapter_args: Vec<String>,
     pub adapter_id: Option<String>,
-    pub term_cmd: Vec<String>,
+    pub term_cmd: Option<Vec<String>>,
+    pub session_name: Option<String>,
     // This is different for every debug adapter and so cannot be strictly typed
     pub launch_args: serde_json::Value,
 }
@@ -30,11 +31,6 @@ impl Config {
         // Create config object
         let config: Config =
             toml::from_str(&contents).context("Failed to parse configuration file")?;
-        // debug!("{:?}", config);
-
-        if config.term_cmd.is_empty() {
-            bail!("term_cmd may not be empty");
-        }
 
         Ok(config)
     }

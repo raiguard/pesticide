@@ -13,11 +13,7 @@ use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::codec::{FramedRead, LinesCodec};
 
-pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> Result<()> {
-    // Parse configuration
-    // Do this first so we can display the error in the terminal
-    let config = Config::new(config_path)?;
-
+pub async fn run(config: Config, sock_path: PathBuf, session: String) -> Result<()> {
     // Initialize state
     let mut state = State::new();
     // Initialize UI
@@ -311,7 +307,11 @@ async fn handle_request(
     if let RequestArguments::runInTerminal(mut request) = request {
         let mut child = match request.kind.as_deref() {
             Some("external") => {
-                let mut cmd = adapter.config.term_cmd.clone();
+                let mut cmd = adapter
+                    .config
+                    .term_cmd
+                    .clone()
+                    .expect("Received runInTerminal request, but no term_cmd was specified");
                 cmd.append(&mut request.args);
                 Command::new(cmd[0].clone()).args(cmd[1..].to_vec()).spawn()
             }

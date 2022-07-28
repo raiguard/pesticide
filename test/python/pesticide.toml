@@ -1,8 +1,8 @@
 adapter = "python"
 adapter_args = ["-m", "debugpy.adapter"]
 adapter_id = "pydbg"
-
 term_cmd = ["kitty", "--"]
+session_name = "pesticide"
 
 [launch_args]
 program = "/home/rai/dev/projects/personal/pesticide/test/python/test.py"
