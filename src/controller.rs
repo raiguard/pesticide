@@ -24,7 +24,8 @@ pub async fn run(config: Config, sock_path: PathBuf, session: String) -> Result<
     // Channel to read debugee stdout through
     let (debugee_tx, mut debugee_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    // Kakoune comms
+    // Editor comms
+    // TODO: Editor agnostic
     let mut kakoune = Kakoune::new(session, sock_path).await?;
 
     // Spin up debug adapter
@@ -57,38 +58,30 @@ pub async fn run(config: Config, sock_path: PathBuf, session: String) -> Result<
             // Incoming debug adapter messages
             res = adapter.stdout.next() => {
                 match res {
-                    Some(res) => {
-                        match res {
-                            Ok(Ok(msg)) => {
-                                adapter.update_seq(msg.seq);
-                                actions.append(&mut match msg.type_ {
-                                    ProtocolMessageType::Event(event) => handle_event(
-                                        &mut state,
-                                        &mut adapter,
-                                        event
-                                    ).await?,
-                                    ProtocolMessageType::Request(request) => handle_request(
-                                        &mut adapter,
-                                        request,
-                                        msg.seq,
-                                        debugee_tx.clone()
-                                    ).await?,
-                                    ProtocolMessageType::Response(response) => handle_response(
-                                        &mut state,
-                                        &mut adapter,
-                                        response
-                                    ).await?,
-                                });
-                            },
-                            Ok(Err(e)) => {
-                                error!("{:?}", e);
-                            },
-                            Err(e) => error!("{}", e)
+                    Some(res) => match res {
+                        Ok(Ok(msg)) => {
+                            adapter.update_seq(msg.seq);
+                            actions.append(&mut match msg.type_ {
+                                ProtocolMessageType::Event(event) => {
+                                    handle_event(&mut state, &mut adapter, event).await?
+                                }
+                                ProtocolMessageType::Request(request) => {
+                                    handle_request(&mut adapter, request, msg.seq, debugee_tx.clone())
+                                        .await?
+                                }
+                                ProtocolMessageType::Response(response) => {
+                                    handle_response(&mut state, &mut adapter, response).await?
+                                }
+                            });
                         }
-                    }
+                        Ok(Err(e)) => {
+                            error!("{:?}", e);
+                        }
+                        Err(e) => error!("{}", e),
+                    },
                     None => {
                         info!("Debug adapter exited, shutting down");
-                        break
+                        break;
                     }
                 }
             }
@@ -102,41 +95,9 @@ pub async fn run(config: Config, sock_path: PathBuf, session: String) -> Result<
             Some(Ok(event)) = ui.input_stream.next() => {
                 actions.append(&mut ui.handle_input(&mut state, event)?)
             }
-            // Requests from Kakoune
+            // Requests from external editor
             Ok(req) = kakoune.recv() => {
-                match req {
-                    KakRequest::ToggleBreakpoint { file, line, column: _column } => {
-                        let source_breakpoints = state.breakpoints.entry(file.clone()).or_default();
-                        if let Some((i, _)) = source_breakpoints.iter().find_position(|breakpoint| breakpoint.line == line) {
-                            source_breakpoints.remove(i);
-                        } else {
-                            source_breakpoints.push(SourceBreakpoint {
-                                column: None,
-                                condition: None,
-                                hit_condition: None,
-                                line,
-                                log_message: None
-                            });
-                        };
-                        let req = SetBreakpointsArguments {
-                            breakpoints: Some(source_breakpoints.clone()),
-                            lines: None,
-                            source: Source {
-                                adapter_data: None,
-                                checksums: None,
-                                name: None,
-                                origin: None,
-                                path:Some(file),
-                                presentation_hint: None,
-                                source_reference: None,
-                                sources: None
-                            },
-                            source_modified: None
-                        };
-                        actions.push(Action::Request(RequestArguments::setBreakpoints(req)));
-                        actions.push(Action::UpdateBreakpoints);
-                    },
-                }
+                actions.append(&mut handle_editor_req(&mut state, &mut adapter, req).await?)
             }
         }
 
@@ -504,6 +465,56 @@ async fn handle_response(
 
     if adapter.num_requests() == 0 {
         actions.push(Action::Redraw);
+    }
+
+    Ok(actions)
+}
+
+async fn handle_editor_req(
+    state: &mut State,
+    adapter: &mut Adapter,
+    req: KakRequest,
+) -> Result<Vec<Action>> {
+    let mut actions = vec![];
+    match req {
+        KakRequest::ToggleBreakpoint {
+            file,
+            line,
+            column: _column,
+        } => {
+            let source_breakpoints = state.breakpoints.entry(file.clone()).or_default();
+            if let Some((i, _)) = source_breakpoints
+                .iter()
+                .find_position(|breakpoint| breakpoint.line == line)
+            {
+                source_breakpoints.remove(i);
+            } else {
+                source_breakpoints.push(SourceBreakpoint {
+                    column: None,
+                    condition: None,
+                    hit_condition: None,
+                    line,
+                    log_message: None,
+                });
+            };
+            let req = SetBreakpointsArguments {
+                breakpoints: Some(source_breakpoints.clone()),
+                lines: None,
+                source: Source {
+                    adapter_data: None,
+                    checksums: None,
+                    name: None,
+                    origin: None,
+                    path: Some(file),
+                    presentation_hint: None,
+                    source_reference: None,
+                    sources: None,
+                },
+                source_modified: None,
+            };
+            actions.push(Action::Request(RequestArguments::setBreakpoints(req)));
+            actions.push(Action::UpdateBreakpoints);
+        }
     }
 
     Ok(actions)
