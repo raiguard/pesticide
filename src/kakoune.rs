@@ -64,10 +64,9 @@ impl Kakoune {
     pub async fn clear_jump(&mut self) -> Result<()> {
         if let Some((path, _)) = &self.current_jump {
             self.send(format!(
-                "evaluate-commands %{{
-                    edit {path}
-                    set-option buffer step_indicator %val{{timestamp}}
-                }}"
+                "edit {}
+                set-option buffer step_indicator %val{{timestamp}}",
+                path.replace("file://", ""),
             ))
             .await?;
             self.current_jump = None;
@@ -93,7 +92,7 @@ impl Kakoune {
                 edit {0} {1}
                 set-option buffer step_indicator %val{{timestamp}} "{1}|{{StepIndicator}}%opt{{step_symbol}}"
             }}"#,
-            source_path, frame.line,
+            source_path.replace("file://", ""), frame.line,
         )).await?;
 
         Ok(())
@@ -119,9 +118,10 @@ impl Kakoune {
                 // TODO: Use 'buffer' instead of 'edit' to avoid opening extra files
                 "{cmd}
                 try %{{
-                    edit {path}
+                    edit {}
                     set-option buffer breakpoints %val{{timestamp}} {}
                 }}",
+                path.replace("file://", ""),
                 breakpoints
                     .iter()
                     .map(|breakpoint| format!(
