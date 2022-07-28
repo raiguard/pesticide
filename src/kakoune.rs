@@ -26,8 +26,10 @@ impl Kakoune {
         })
     }
 
-    pub async fn quit(&mut self) -> Result<()> {
+    pub async fn quit(&mut self, state: &mut State) -> Result<()> {
         self.clear_jump().await?;
+        state.breakpoints.clear();
+        self.update_breakpoints(state).await?;
         fs::remove_file(&self.sock_path).await?;
         Ok(())
     }
@@ -59,6 +61,20 @@ impl Kakoune {
         Ok(())
     }
 
+    pub async fn clear_jump(&mut self) -> Result<()> {
+        if let Some((path, _)) = &self.current_jump {
+            self.send(format!(
+                "evaluate-commands %{{
+                    edit {path}
+                    set-option buffer step_indicator %val{{timestamp}}
+                }}"
+            ))
+            .await?;
+            self.current_jump = None;
+        }
+        Ok(())
+    }
+
     pub async fn jump(&mut self, state: &State) -> Result<()> {
         let frames = state.stack_frames.get(&state.current_thread).unwrap();
         let frame = frames
@@ -83,26 +99,26 @@ impl Kakoune {
         Ok(())
     }
 
-    pub async fn clear_jump(&mut self) -> Result<()> {
-        if let Some((path, _)) = &self.current_jump {
-            self.send(format!(
-                "evaluate-commands %{{
-                    edit {path}
-                    set-option buffer step_indicator %val{{timestamp}}
-                }}"
-            ))
-            .await?;
-            self.current_jump = None;
-        }
-        Ok(())
-    }
-
     pub async fn update_breakpoints(&mut self, state: &State) -> Result<()> {
-        // Breakpoints
+        // Clear all breakpoints
+        let mut cmd = String::from(
+            r#"evaluate-commands %sh{
+                eval set -- "$kak_quoted_buflist"
+                while [ $# -gt 0 ]; do
+                    echo "
+                        edit $1
+                        set-option buffer breakpoints %val{timestamp}
+                    "
+                    shift
+                done
+            }"#,
+        );
+        // Set current breakpoints
         for (path, breakpoints) in &state.breakpoints {
-            self.send(format!(
+            cmd = format!(
                 // TODO: Use 'buffer' instead of 'edit' to avoid opening extra files
-                "evaluate-commands %{{
+                "{cmd}
+                try %{{
                     edit {path}
                     set-option buffer breakpoints %val{{timestamp}} {}
                 }}",
@@ -113,9 +129,9 @@ impl Kakoune {
                         breakpoint.line
                     ))
                     .collect::<String>(),
-            ))
-            .await?;
+            );
         }
+        self.send(cmd).await?;
         Ok(())
     }
 }

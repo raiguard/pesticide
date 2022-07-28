@@ -162,7 +162,7 @@ pub async fn run(config_path: PathBuf, sock_path: PathBuf, session: String) -> R
     trace!("Cleaning up");
     ui.destroy()?;
     adapter.quit().await?;
-    kakoune.quit().await?;
+    kakoune.quit(&mut state).await?;
     trace!("Cleaned up");
 
     Ok(())
