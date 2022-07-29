@@ -75,10 +75,15 @@ async fn main() -> Result<()> {
     if cli.request.is_some() && cli.session.is_none() {
         bail!("--request flag requires --session to be defined.");
     }
-    let config = Config::new(cli.config)?;
+    let config = Config::new(cli.config);
     let session = cli
         .session
-        .or_else(|| config.session_name.clone())
+        .or_else(|| {
+            config
+                .as_ref()
+                .ok()
+                .and_then(|config| config.session_name.clone())
+        })
         .unwrap_or_else(|| std::process::id().to_string());
 
     // Determine named pipe path
@@ -95,6 +100,7 @@ async fn main() -> Result<()> {
         socket.write_all(request.as_bytes()).await?;
         Ok(())
     } else {
+        let config = config?;
         // Create log file
         let log = dirs::data_dir()
             .expect("Unable to get local data directory")
