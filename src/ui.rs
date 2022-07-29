@@ -1,4 +1,4 @@
-use crate::controller::Action;
+use crate::server::Action;
 use crate::dap::*;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
@@ -72,7 +72,7 @@ impl Ui {
 
     pub fn handle_input(
         &mut self,
-        state: &mut crate::controller::State,
+        state: &mut crate::server::State,
         event: crossterm::event::Event,
     ) -> Result<Vec<Action>> {
         let mut actions = vec![];
@@ -261,7 +261,7 @@ impl Ui {
         Ok(actions)
     }
 
-    pub fn draw(&mut self, state: &crate::controller::State) -> Result<()> {
+    pub fn draw(&mut self, state: &crate::server::State) -> Result<()> {
         // Variables
         let mut variables_disp = vec![];
         let mut variables_list = vec![];
@@ -441,7 +441,7 @@ impl Ui {
 
 fn walk_variables(
     ui: &Ui,
-    state: &crate::controller::State,
+    state: &crate::server::State,
     variables_disp: &mut Vec<ListItem>,
     variables_list: &mut Vec<VariablesItemKind>,
     (indent, variables_reference): (usize, i64),

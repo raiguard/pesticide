@@ -37,9 +37,9 @@
 
 mod adapter;
 mod config;
-mod controller;
 mod dap;
 mod kakoune;
+mod server;
 mod ui;
 
 #[macro_use]
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
         )?;
 
         // Run application
-        controller::run(config, sock_path, session).await
+        server::run(config, sock_path, session).await
     }
 }
 
