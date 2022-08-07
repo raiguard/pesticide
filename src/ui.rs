@@ -1,5 +1,5 @@
-use crate::server::Action;
 use crate::dap::*;
+use crate::server::Action;
 use anyhow::Result;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture, EventStream, KeyCode};
 use crossterm::execute;
@@ -302,7 +302,11 @@ impl Ui {
                         }),
                     ),
             )
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+            .highlight_style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .bg(Color::Rgb(42, 63, 83)),
+            );
 
         self.terminal.draw(|f| {
             // Layout
