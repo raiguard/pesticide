@@ -424,6 +424,7 @@ async fn handle_response(
                         state
                             .variables
                             .insert(req.variables_reference, res.variables);
+                        actions.push(Action::Redraw);
                     }
                 }
                 ResponseBody::Async => todo!(),
