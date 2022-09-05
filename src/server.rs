@@ -107,6 +107,7 @@ pub async fn run(config: Config, sock_path: PathBuf, session: String) -> Result<
                 Action::ClearJump => kakoune.clear_jump().await?,
                 Action::Jump => kakoune.jump(&state).await?,
                 Action::Quit => break 'main,
+                // TODO: Batch draw calls to 30 FPS to avoid falling behind
                 Action::Redraw => ui.draw(&state)?,
                 Action::Request(req) => {
                     adapter.send_request(req).await?;

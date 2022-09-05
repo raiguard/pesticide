@@ -1,39 +1,19 @@
-// LOGIC:
-// Each debug session has one server and N clients
-// Each session has a socket in $XDG_RUNTIME_DIR/pesticide, keyed by session name
-// The session name is either provided as a CLI flag or is set to the PID
-// Daemon mode will start a server without starting any clients
-// Kakoune mode will start a client that is connected to the Kakoune session instead of being a standard client
-// Regular clients can take arguments to specify how their UI is configured
-// Request mode will construct a client, send a single request, then quit
-// The server will manage a log in $HOME/.local/share/pesticide/[session].log
-// Clients will send their log messages to the server so they all get written to the same file
-// Socket messages will use something similar to the DAP - a content length header, then the data as JSON
+// ARCHITECTURE NOTES:
 //
-// IMPLEMENTATION:
-// Construct a server and client, and pass simple data back and forth
-// Send log messages to server to have a single log file
-// Connect existing adapter logic to the server
-// Send updated events to clients
-// Clients request the data they need
-// TUI
+// Two primary interaction modes: CLI and TUI
+// CLI will accept commands
+// TUI will process keybindings, execute the corresponding commands in the background, and present the current data
+// The user can remap TUI keybindings to aritrary commands
 //
-// SERVER ARCHITECTURE:
-// - Dedicated task to read and write the data structures
-// - A separate task for each client that uses channels to send and receive data from the data task
-// - Separate task to listen to server stdout, or use select! in the management task?
-// - Each client task will need to be able to send events to the client when the state updates without user input
+// The server will provide a socket in $XDG_RUNTIME_DIR/pesticide, keyed by provided session name or PID
+// External editors may send pesticide commands to this socket
+// Data returned from commands will be returned through the socket, and a connected TUI will update as well
+// The socket will also accept commands and return responses in JSON format if desired
 //
-// CLIENT ARCHITECTURE:
-// - Dedicated task to manage I/O with the server
-// - select! over client TUI or CLI inputs, and messages received from the server
-// - separate tasks for rendering the UI and accepting user input
-//
-// MVP ARCHITECTURE:
-// - Single program, no client/server stuff yet, it adds a ton of complexity
-// - Limited UI customization, i.e. lazygit
-
-// TODO: Clean out unwraps
+// When pesticide is first opened, it will be in "configuration" mode, where you can set breakpoints and settings before
+// starting the debug session
+// Somewhat similar to GDB in that respect
+// Perhaps we should persist breakpoints across sessions?
 
 mod adapter;
 mod config;
