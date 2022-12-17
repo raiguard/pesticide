@@ -1,22 +1,37 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"net"
 	"os"
 
+	"github.com/adrg/xdg"
 	"github.com/google/go-dap"
 )
 
+type fmtkLaunchArgs struct {
+	hookControl []string
+	modsPath    string
+}
+
 func main() {
-	// Connect to mock server
-	conn, err := net.Dial("tcp", ":54321")
+	// Logging
+	logPath, err := xdg.StateFile("pesticide.log")
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		panic(err)
+	}
+	log.SetOutput(file)
 
-	s := newTcpSession(conn)
+	// s := newTcpSession(":54321")
+	s := newStdioSession(
+		"fmtk",
+		[]string{"debug", "/home/rai/dev/factorio/1.1/bin/x64/factorio"},
+		[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
+	)
 
 	// Initialize
 	s.send(&dap.InitializeRequest{
@@ -26,7 +41,7 @@ func main() {
 			ClientID:                     "pest",
 			ClientName:                   "Pesticide",
 			Locale:                       "en-US",
-			PathFormat:                   "uri",
+			PathFormat:                   "path",
 			SupportsRunInTerminalRequest: true,
 		},
 	})
@@ -51,13 +66,21 @@ func handleMessage(s *session, msg dap.Message) {
 			})
 		} else {
 			s.phase = phaseRunning
-			s.send(&dap.LaunchRequest{Request: s.newRequest("launch")})
+			s.send(&dap.LaunchRequest{
+				Request:   s.newRequest("launch"),
+				Arguments: s.launchArgs,
+			})
 		}
 	case *dap.ConfigurationDoneResponse:
 		s.phase = phaseRunning
-		s.send(&dap.LaunchRequest{Request: s.newRequest("launch")})
+		s.send(&dap.LaunchRequest{
+			Request:   s.newRequest("launch"),
+			Arguments: s.launchArgs,
+		})
 	case *dap.TerminatedEvent:
-		log.Println("Debug adapter sent terminated event, exiting...")
+		fmt.Println("Debug adapter sent terminated event, exiting...")
 		os.Exit(1)
+	case *dap.OutputEvent:
+		fmt.Print(msg.Body.Output)
 	}
 }
