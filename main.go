@@ -9,11 +9,6 @@ import (
 	"github.com/google/go-dap"
 )
 
-type fmtkLaunchArgs struct {
-	hookControl []string
-	modsPath    string
-}
-
 func main() {
 	// Logging
 	logPath, err := xdg.StateFile("pesticide.log")
@@ -26,17 +21,17 @@ func main() {
 	}
 	log.SetOutput(file)
 
-	// s := newTcpSession(":54321")
-	s := newStdioSession(
+	// a := newTcpAdapter(":54321")
+	a := newStdioAdapter(
 		"fmtk",
 		[]string{"debug", os.ExpandEnv("$FACTORIO")},
 		[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
 	)
-	defer s.finish()
+	defer a.finish()
 
 	// Initialize
-	s.send(&dap.InitializeRequest{
-		Request: s.newRequest("initialize"),
+	a.send(&dap.InitializeRequest{
+		Request: a.newRequest("initialize"),
 		Arguments: dap.InitializeRequestArguments{
 			ClientID:   "pest",
 			ClientName: "Pesticide",
@@ -48,13 +43,13 @@ func main() {
 	// Main loop
 	for {
 		select {
-		case msg := <-s.recvQueue:
-			handleMessage(s, msg)
+		case msg := <-a.recvQueue:
+			handleMessage(a, msg)
 		}
 	}
 }
 
-func handleMessage(s *session, msg dap.Message) {
+func handleMessage(s *adapter, msg dap.Message) {
 	// TODO: Error handling
 	switch msg := msg.(type) {
 	case *dap.InitializeResponse:

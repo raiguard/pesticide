@@ -10,9 +10,9 @@ import (
 	"github.com/google/go-dap"
 )
 
-type session struct {
+type adapter struct {
 	// Common I/O
-	adapter   bufio.ReadWriter
+	rw        bufio.ReadWriter
 	recvQueue chan dap.Message
 	sendQueue chan dap.Message
 	// TCP
@@ -34,7 +34,7 @@ const (
 	phaseRunning
 )
 
-func newStdioSession(cmd string, args []string, launchArgs json.RawMessage) *session {
+func newStdioAdapter(cmd string, args []string, launchArgs json.RawMessage) *adapter {
 	child := exec.Command(cmd, args...)
 	stdin, err := child.StdinPipe()
 	if err != nil {
@@ -49,8 +49,8 @@ func newStdioSession(cmd string, args []string, launchArgs json.RawMessage) *ses
 		panic(err)
 	}
 
-	s := &session{
-		adapter:    bufio.ReadWriter{Reader: bufio.NewReader(stdout), Writer: bufio.NewWriter(stdin)},
+	s := &adapter{
+		rw:         bufio.ReadWriter{Reader: bufio.NewReader(stdout), Writer: bufio.NewWriter(stdin)},
 		cmd:        child,
 		launchArgs: launchArgs,
 		recvQueue:  make(chan dap.Message),
@@ -63,14 +63,14 @@ func newStdioSession(cmd string, args []string, launchArgs json.RawMessage) *ses
 	return s
 }
 
-func newTcpSession(addr string) *session {
+func newTcpAdapter(addr string) *adapter {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		panic(err)
 	}
 
-	s := &session{
-		adapter:   bufio.ReadWriter{Reader: bufio.NewReader(conn), Writer: bufio.NewWriter(conn)},
+	s := &adapter{
+		rw:        bufio.ReadWriter{Reader: bufio.NewReader(conn), Writer: bufio.NewWriter(conn)},
 		conn:      &conn,
 		recvQueue: make(chan dap.Message),
 		sendQueue: make(chan dap.Message),
@@ -80,54 +80,54 @@ func newTcpSession(addr string) *session {
 	return s
 }
 
-func (s *session) finish() {
-	conn := s.conn
+func (a *adapter) finish() {
+	conn := a.conn
 	if conn != nil {
 		(*conn).Close()
 	}
-	cmd := s.cmd
+	cmd := a.cmd
 	if cmd != nil {
 		cmd.Process.Kill()
 	}
 }
 
 // Queue a message to be sent to the adapter.
-func (s *session) send(message dap.Message) {
-	s.sendQueue <- message
+func (a *adapter) send(message dap.Message) {
+	a.sendQueue <- message
 }
 
 // Sequentially send messages to the adapter.
-func (s *session) sendFromQueue() {
-	for msg := range s.sendQueue {
-		err := dap.WriteProtocolMessage(s.adapter.Writer, msg)
+func (a *adapter) sendFromQueue() {
+	for msg := range a.sendQueue {
+		err := dap.WriteProtocolMessage(a.rw.Writer, msg)
 		if err != nil {
 			log.Println("Unable to send message to adapter: ", err)
 			continue
 		}
 		log.Printf("ADAPTER <- %#v", msg)
-		s.adapter.Writer.Flush()
+		a.rw.Writer.Flush()
 	}
 }
 
 // Sequentially read messages from the adapter.
-func (s *session) recv() {
+func (a *adapter) recv() {
 	for {
-		msg, err := dap.ReadProtocolMessage(s.adapter.Reader)
+		msg, err := dap.ReadProtocolMessage(a.rw.Reader)
 		if err != nil {
 			log.Println("Error parsing adapter message: ", err)
 			// TODO: Proper error handling
 			break
 		}
 		log.Printf("ADAPTER -> %#v", msg)
-		s.recvQueue <- msg
+		a.recvQueue <- msg
 	}
 }
 
 // Construct a new Request and increment the sequence number.
-func (s *session) newRequest(command string) dap.Request {
-	s.seq++
+func (a *adapter) newRequest(command string) dap.Request {
+	a.seq++
 	return dap.Request{
-		ProtocolMessage: dap.ProtocolMessage{Seq: s.seq, Type: "request"},
+		ProtocolMessage: dap.ProtocolMessage{Seq: a.seq, Type: "request"},
 		Command:         command,
 	}
 }
