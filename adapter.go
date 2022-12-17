@@ -10,7 +10,6 @@ import (
 	"log"
 	"net"
 	"os/exec"
-	"syscall"
 
 	"github.com/google/go-dap"
 )
@@ -42,11 +41,11 @@ const (
 // as a child process.
 func newStdioAdapter(cmd string, args []string, launchArgs json.RawMessage) *adapter {
 	child := exec.Command(cmd, args...)
-	// Prevent propagation of signals
-	child.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
-	}
+	// // Prevent propagation of signals
+	// child.SysProcAttr = &syscall.SysProcAttr{
+	// 	Setpgid: true,
+	// 	Pgid:    0,
+	// }
 	stdin, err := child.StdinPipe()
 	// TODO: Handle errors gracefully
 	if err != nil {
@@ -134,7 +133,7 @@ func (a *adapter) finish() {
 		cmd.Process.Kill()
 	}
 	delete(adapters, a.id)
-	fmt.Println("Adapter pid", a.id, "exited")
+	fmt.Println("Adapter id", a.id, "exited")
 }
 
 func (a *adapter) send(message dap.Message) {
@@ -191,7 +190,7 @@ func (a *adapter) handleMessage(msg dap.Message) {
 	case *dap.TerminatedEvent:
 		a.finish()
 	case *dap.OutputEvent:
-		fmt.Print(msg.Body.Output)
+		a.onOutputEvent(msg)
 	}
 }
 
@@ -217,4 +216,8 @@ func (a *adapter) onConfigurationDoneResponse(res *dap.ConfigurationDoneResponse
 		Request:   a.newRequest("launch"),
 		Arguments: a.launchArgs,
 	})
+}
+
+func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
+	ui.events <- uiEvent{kind: uiDisplay, data: ev.Body.Output}
 }

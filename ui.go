@@ -5,58 +5,74 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 )
 
 type UI struct {
-	input chan string
-	sigs  chan os.Signal
+	events chan uiEvent
+	in     *bufio.Reader
 }
+
+type uiEvent struct {
+	kind uiEventKind
+	data string
+}
+
+type uiEventKind uint8
+
+const (
+	uiNextCmd uiEventKind = iota
+	uiShutdown
+	uiDisplay
+)
 
 func initUi() *UI {
 	ui := &UI{
-		input: make(chan string),
-		sigs:  make(chan os.Signal),
+		events: make(chan uiEvent, 5),
+		in:     bufio.NewReader(os.Stdin),
 	}
-	go ui.inputWorker()
-	go ui.signalWorker()
-	wg.Add(2)
+	go ui.eventWorker()
+	wg.Add(1)
+	ui.events <- uiEvent{kind: uiNextCmd}
 	return ui
 }
 
-func (ui *UI) inputWorker() {
-	in := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Print("(pest) ")
-		in, _, err := in.ReadLine()
-		if err != nil {
-			fmt.Errorf("%s\n", err)
-			continue
-		}
-		cmd := string(in)
-		log.Println("User command: '", cmd, "'")
-		if cmd == "q" {
-			break
-		} else if cmd == "launch" {
-			newStdioAdapter(
-				"fmtk",
-				[]string{"debug", os.ExpandEnv("$FACTORIO")},
-				[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
-			)
-		} else if cmd == "attach" {
-			newTcpAdapter(":54321")
+func (ui *UI) eventWorker() {
+eventLoop:
+	for event := range ui.events {
+		switch event.kind {
+		case uiNextCmd:
+			ui.handleNextCmd()
+		case uiDisplay:
+			fmt.Print(event.data)
+		case uiShutdown:
+			break eventLoop
 		}
 	}
-	close(ui.input)
-	close(ui.sigs)
+	close(ui.events)
 	wg.Done()
 }
 
-func (ui *UI) signalWorker() {
-	signal.Notify(ui.sigs, syscall.SIGINT)
-	for sig := range ui.sigs {
-		fmt.Println("\n", sig.String())
+func (ui *UI) handleNextCmd() {
+retry:
+	fmt.Print("(pest) ")
+	in, _, err := ui.in.ReadLine()
+	if err != nil {
+		log.Println("Failed to read from stdin:", err)
+		goto retry
 	}
-	wg.Done()
+	cmd := string(in)
+	log.Println("User command: '", cmd, "'")
+
+	// TODO: Parse scfg command
+	if cmd == "q" {
+		ui.events <- uiEvent{kind: uiShutdown}
+	} else if cmd == "launch" {
+		newStdioAdapter(
+			"fmtk",
+			[]string{"debug", os.ExpandEnv("$FACTORIO")},
+			[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
+		)
+	} else if cmd == "attach" {
+		newTcpAdapter(":54321")
+	}
 }
