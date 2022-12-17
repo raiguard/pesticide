@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/google/go-dap"
 )
@@ -24,28 +24,31 @@ type adapter struct {
 	// Stdio
 	cmd        *exec.Cmd
 	launchArgs json.RawMessage
-	// Adapter settings
-	adapterCapabilities dap.Capabilities
 	// State
-	phase sessionPhase
-	seq   int
+	capabilities dap.Capabilities
+	id           string
+	phase        adapterState
+	seq          int
 }
 
-type sessionPhase uint8
+type adapterState uint8
 
 const (
-	phaseInitializing sessionPhase = iota
-	phaseRunning
+	adapterInitializing adapterState = iota
+	adapterRunning
 )
 
 // Creates a new adapter communicating over STDIO. The adapter will be spawned
 // as a child process.
-func newStdioAdapter(
-	cmd string, args []string, launchArgs json.RawMessage,
-) *adapter {
-	// TODO: Handle gracefully
+func newStdioAdapter(cmd string, args []string, launchArgs json.RawMessage) *adapter {
 	child := exec.Command(cmd, args...)
+	// Prevent propagation of signals
+	child.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+		Pgid:    0,
+	}
 	stdin, err := child.StdinPipe()
+	// TODO: Handle errors gracefully
 	if err != nil {
 		panic(err)
 	}
@@ -62,10 +65,13 @@ func newStdioAdapter(
 	writer := bufio.NewWriter(stdin)
 
 	a := &adapter{
-		rw:         bufio.ReadWriter{Reader: reader, Writer: writer},
+		rw:        bufio.ReadWriter{Reader: reader, Writer: writer},
+		sendQueue: make(chan dap.Message),
+
 		cmd:        child,
 		launchArgs: launchArgs,
-		sendQueue:  make(chan dap.Message),
+
+		id: fmt.Sprint(child.Process.Pid),
 	}
 
 	a.start()
@@ -77,7 +83,7 @@ func newStdioAdapter(
 // must have been started separately.
 func newTcpAdapter(addr string) *adapter {
 	conn, err := net.Dial("tcp", addr)
-	// TODO: Handle gracefully
+	// TODO: Handle errors gracefully
 	if err != nil {
 		panic(err)
 	}
@@ -89,6 +95,7 @@ func newTcpAdapter(addr string) *adapter {
 		rw:        bufio.ReadWriter{Reader: reader, Writer: writer},
 		conn:      &conn,
 		sendQueue: make(chan dap.Message),
+		id:        conn.LocalAddr().String(),
 	}
 
 	a.start()
@@ -97,6 +104,8 @@ func newTcpAdapter(addr string) *adapter {
 }
 
 func (a *adapter) start() {
+	adapters[a.id] = a
+
 	go a.recv()
 	go a.sendFromQueue()
 
@@ -115,6 +124,7 @@ func (a *adapter) start() {
 }
 
 func (a *adapter) finish() {
+	close(a.sendQueue)
 	conn := a.conn
 	if conn != nil {
 		(*conn).Close()
@@ -123,6 +133,8 @@ func (a *adapter) finish() {
 	if cmd != nil {
 		cmd.Process.Kill()
 	}
+	delete(adapters, a.id)
+	fmt.Println("Adapter pid", a.id, "exited")
 }
 
 func (a *adapter) send(message dap.Message) {
@@ -177,22 +189,21 @@ func (a *adapter) handleMessage(msg dap.Message) {
 	case *dap.ConfigurationDoneResponse:
 		a.onConfigurationDoneResponse(msg)
 	case *dap.TerminatedEvent:
-		fmt.Println("Debug adapter sent terminated event, exiting...")
-		os.Exit(1) // FIXME: This sucks
+		a.finish()
 	case *dap.OutputEvent:
 		fmt.Print(msg.Body.Output)
 	}
 }
 
 func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
-	a.adapterCapabilities = res.Body
-	if a.adapterCapabilities.SupportsConfigurationDoneRequest {
+	a.capabilities = res.Body
+	if a.capabilities.SupportsConfigurationDoneRequest {
 		a.send(&dap.ConfigurationDoneRequest{
 			Request:   a.newRequest("configurationDone"),
 			Arguments: dap.ConfigurationDoneArguments{},
 		})
 	} else {
-		a.phase = phaseRunning
+		a.phase = adapterRunning
 		a.send(&dap.LaunchRequest{
 			Request:   a.newRequest("launch"),
 			Arguments: a.launchArgs,
@@ -201,7 +212,7 @@ func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
 }
 
 func (a *adapter) onConfigurationDoneResponse(res *dap.ConfigurationDoneResponse) {
-	a.phase = phaseRunning
+	a.phase = adapterRunning
 	a.send(&dap.LaunchRequest{
 		Request:   a.newRequest("launch"),
 		Arguments: a.launchArgs,

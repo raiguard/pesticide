@@ -8,7 +8,11 @@ import (
 	"github.com/adrg/xdg"
 )
 
-var wg sync.WaitGroup
+var (
+	adapters map[string]*adapter
+	ui       *UI
+	wg       sync.WaitGroup
+)
 
 func main() {
 	// Logging
@@ -23,13 +27,13 @@ func main() {
 	}
 	log.SetOutput(file)
 
-	// a := newTcpAdapter(":54321")
-	a := newStdioAdapter(
-		"fmtk",
-		[]string{"debug", os.ExpandEnv("$FACTORIO")},
-		[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
-	)
-	defer a.finish()
+	adapters = make(map[string]*adapter)
+	// TODO: Headless mode?
+	ui = initUi()
 
 	wg.Wait()
+
+	for _, a := range adapters {
+		a.finish()
+	}
 }
