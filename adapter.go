@@ -1,10 +1,15 @@
 package main
 
+// Adapter creates and manages communication with a debug adapter. A debugging
+// session may have zero or more adapters.
+
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 
 	"github.com/google/go-dap"
@@ -13,7 +18,6 @@ import (
 type adapter struct {
 	// Common I/O
 	rw        bufio.ReadWriter
-	recvQueue chan dap.Message
 	sendQueue chan dap.Message
 	// TCP
 	conn *net.Conn
@@ -34,7 +38,12 @@ const (
 	phaseRunning
 )
 
-func newStdioAdapter(cmd string, args []string, launchArgs json.RawMessage) *adapter {
+// Creates a new adapter communicating over STDIO. The adapter will be spawned
+// as a child process.
+func newStdioAdapter(
+	cmd string, args []string, launchArgs json.RawMessage,
+) *adapter {
+	// TODO: Handle gracefully
 	child := exec.Command(cmd, args...)
 	stdin, err := child.StdinPipe()
 	if err != nil {
@@ -49,35 +58,60 @@ func newStdioAdapter(cmd string, args []string, launchArgs json.RawMessage) *ada
 		panic(err)
 	}
 
-	s := &adapter{
-		rw:         bufio.ReadWriter{Reader: bufio.NewReader(stdout), Writer: bufio.NewWriter(stdin)},
+	reader := bufio.NewReader(stdout)
+	writer := bufio.NewWriter(stdin)
+
+	a := &adapter{
+		rw:         bufio.ReadWriter{Reader: reader, Writer: writer},
 		cmd:        child,
 		launchArgs: launchArgs,
-		recvQueue:  make(chan dap.Message),
 		sendQueue:  make(chan dap.Message),
 	}
 
-	go s.sendFromQueue()
-	go s.recv()
+	a.start()
 
-	return s
+	return a
 }
 
+// Creates a new adapter communicating over TCP. The adapter is unmanaged and
+// must have been started separately.
 func newTcpAdapter(addr string) *adapter {
 	conn, err := net.Dial("tcp", addr)
+	// TODO: Handle gracefully
 	if err != nil {
 		panic(err)
 	}
 
-	s := &adapter{
-		rw:        bufio.ReadWriter{Reader: bufio.NewReader(conn), Writer: bufio.NewWriter(conn)},
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
+	a := &adapter{
+		rw:        bufio.ReadWriter{Reader: reader, Writer: writer},
 		conn:      &conn,
-		recvQueue: make(chan dap.Message),
 		sendQueue: make(chan dap.Message),
 	}
-	go s.sendFromQueue()
-	go s.recv()
-	return s
+
+	a.start()
+
+	return a
+}
+
+func (a *adapter) start() {
+	go a.recv()
+	go a.sendFromQueue()
+
+	wg.Add(2)
+
+	// Initialize
+	a.send(&dap.InitializeRequest{
+		Request: a.newRequest("initialize"),
+		Arguments: dap.InitializeRequestArguments{
+			ClientID:   "pest",
+			ClientName: "Pesticide",
+			Locale:     "en-US",
+			PathFormat: "path",
+		},
+	})
 }
 
 func (a *adapter) finish() {
@@ -91,12 +125,10 @@ func (a *adapter) finish() {
 	}
 }
 
-// Queue a message to be sent to the adapter.
 func (a *adapter) send(message dap.Message) {
 	a.sendQueue <- message
 }
 
-// Sequentially send messages to the adapter.
 func (a *adapter) sendFromQueue() {
 	for msg := range a.sendQueue {
 		err := dap.WriteProtocolMessage(a.rw.Writer, msg)
@@ -107,9 +139,9 @@ func (a *adapter) sendFromQueue() {
 		log.Printf("ADAPTER <- %#v", msg)
 		a.rw.Writer.Flush()
 	}
+	wg.Done()
 }
 
-// Sequentially read messages from the adapter.
 func (a *adapter) recv() {
 	for {
 		msg, err := dap.ReadProtocolMessage(a.rw.Reader)
@@ -119,15 +151,59 @@ func (a *adapter) recv() {
 			break
 		}
 		log.Printf("ADAPTER -> %#v", msg)
-		a.recvQueue <- msg
+		// Increment seq
+		seq := msg.GetSeq()
+		if seq > a.seq {
+			a.seq = seq
+		}
+		a.handleMessage(msg)
 	}
+	wg.Done()
 }
 
-// Construct a new Request and increment the sequence number.
 func (a *adapter) newRequest(command string) dap.Request {
 	a.seq++
 	return dap.Request{
 		ProtocolMessage: dap.ProtocolMessage{Seq: a.seq, Type: "request"},
 		Command:         command,
 	}
+}
+
+func (a *adapter) handleMessage(msg dap.Message) {
+	// TODO: Handle error responses
+	switch msg := msg.(type) {
+	case *dap.InitializeResponse:
+		a.onInitializeResponse(msg)
+	case *dap.ConfigurationDoneResponse:
+		a.onConfigurationDoneResponse(msg)
+	case *dap.TerminatedEvent:
+		fmt.Println("Debug adapter sent terminated event, exiting...")
+		os.Exit(1) // FIXME: This sucks
+	case *dap.OutputEvent:
+		fmt.Print(msg.Body.Output)
+	}
+}
+
+func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
+	a.adapterCapabilities = res.Body
+	if a.adapterCapabilities.SupportsConfigurationDoneRequest {
+		a.send(&dap.ConfigurationDoneRequest{
+			Request:   a.newRequest("configurationDone"),
+			Arguments: dap.ConfigurationDoneArguments{},
+		})
+	} else {
+		a.phase = phaseRunning
+		a.send(&dap.LaunchRequest{
+			Request:   a.newRequest("launch"),
+			Arguments: a.launchArgs,
+		})
+	}
+}
+
+func (a *adapter) onConfigurationDoneResponse(res *dap.ConfigurationDoneResponse) {
+	a.phase = phaseRunning
+	a.send(&dap.LaunchRequest{
+		Request:   a.newRequest("launch"),
+		Arguments: a.launchArgs,
+	})
 }
