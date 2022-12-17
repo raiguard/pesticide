@@ -32,6 +32,7 @@ func main() {
 		[]string{"debug", "/home/rai/dev/factorio/1.1/bin/x64/factorio"},
 		[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
 	)
+	defer s.finish()
 
 	// Initialize
 	s.send(&dap.InitializeRequest{
@@ -79,7 +80,7 @@ func handleMessage(s *session, msg dap.Message) {
 		})
 	case *dap.TerminatedEvent:
 		fmt.Println("Debug adapter sent terminated event, exiting...")
-		os.Exit(1)
+		os.Exit(1) // FIXME: This sucks
 	case *dap.OutputEvent:
 		fmt.Print(msg.Body.Output)
 	}
