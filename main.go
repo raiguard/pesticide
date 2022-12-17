@@ -29,7 +29,7 @@ func main() {
 	// s := newTcpSession(":54321")
 	s := newStdioSession(
 		"fmtk",
-		[]string{"debug", "/home/rai/dev/factorio/1.1/bin/x64/factorio"},
+		[]string{"debug", os.ExpandEnv("$FACTORIO")},
 		[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
 	)
 	defer s.finish()
@@ -38,12 +38,10 @@ func main() {
 	s.send(&dap.InitializeRequest{
 		Request: s.newRequest("initialize"),
 		Arguments: dap.InitializeRequestArguments{
-			AdapterID:                    "mock",
-			ClientID:                     "pest",
-			ClientName:                   "Pesticide",
-			Locale:                       "en-US",
-			PathFormat:                   "path",
-			SupportsRunInTerminalRequest: true,
+			ClientID:   "pest",
+			ClientName: "Pesticide",
+			Locale:     "en-US",
+			PathFormat: "path",
 		},
 	})
 
@@ -57,6 +55,7 @@ func main() {
 }
 
 func handleMessage(s *session, msg dap.Message) {
+	// TODO: Error handling
 	switch msg := msg.(type) {
 	case *dap.InitializeResponse:
 		s.adapterCapabilities = msg.Body
