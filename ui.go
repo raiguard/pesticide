@@ -32,7 +32,7 @@ func initUi() *UI {
 	}
 	go ui.eventWorker()
 	wg.Add(1)
-	ui.events <- uiEvent{kind: uiNextCmd}
+	ui.send(uiNextCmd)
 	return ui
 }
 
@@ -64,15 +64,27 @@ retry:
 	log.Println("User command: '", cmd, "'")
 
 	// TODO: Parse scfg command
-	if cmd == "q" {
-		ui.events <- uiEvent{kind: uiShutdown}
-	} else if cmd == "launch" {
+	switch cmd {
+	case "q":
+		ui.send(uiShutdown)
+	case "launch":
 		newStdioAdapter(
 			"fmtk",
 			[]string{"debug", os.ExpandEnv("$FACTORIO")},
 			[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
 		)
-	} else if cmd == "attach" {
+	case "attach":
 		newTcpAdapter(":54321")
+	default:
+		ui.display("Unknown command: ", cmd, "\n")
+		ui.send(uiNextCmd)
 	}
+}
+
+func (ui *UI) display(in ...any) {
+	ui.events <- uiEvent{kind: uiDisplay, data: fmt.Sprint(in...)}
+}
+
+func (ui *UI) send(kind uiEventKind) {
+	ui.events <- uiEvent{kind: kind}
 }

@@ -134,6 +134,9 @@ func (a *adapter) finish() {
 	}
 	delete(adapters, a.id)
 	fmt.Println("Adapter id", a.id, "exited")
+	if len(adapters) == 0 {
+		ui.send(uiNextCmd)
+	}
 }
 
 func (a *adapter) send(message dap.Message) {
@@ -219,5 +222,5 @@ func (a *adapter) onConfigurationDoneResponse(res *dap.ConfigurationDoneResponse
 }
 
 func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
-	ui.events <- uiEvent{kind: uiDisplay, data: ev.Body.Output}
+	ui.display(ev.Body.Output)
 }
