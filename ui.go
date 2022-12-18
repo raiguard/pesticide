@@ -72,11 +72,11 @@ retry:
 	}
 	cmd := block[0]
 
-	// TODO: Parse scfg command
+	// TODO: Unify command dispatch logic
 	switch cmd.Name {
-	case "q":
+	case "quit", "q":
 		ui.send(uiShutdown)
-	case "launch":
+	case "launch", "l":
 		cfg := adapterConfigs[cmd.Params[0]]
 		if cfg == nil {
 			fmt.Printf("Unknown adapter '%s'\n", cmd.Params[0])
@@ -87,6 +87,16 @@ retry:
 		newStdioAdapter(*cfg.cmd, *cfg.args)
 	// case "attach":
 	// 	newTcpAdapter(":54321")
+	case "adapter-configs", "ac":
+		fmt.Print("Configured adapters: ")
+		for name := range adapterConfigs {
+			fmt.Printf("%s ", name)
+		}
+		fmt.Print("\n")
+		ui.send(uiNextCmd)
+	case "help", "h":
+		fmt.Print("Available commands:\nadapter-configs -- List available adapter configurations\nlaunch <name> -- Launch the specified adapter\nquit -- Quit pesticide\nhelp -- Show help menu\n")
+		ui.send(uiNextCmd)
 	default:
 		ui.display("Unknown command: ", cmdStr, "\n")
 		ui.send(uiNextCmd)

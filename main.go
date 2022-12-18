@@ -33,6 +33,7 @@ func main() {
 	// TODO: Headless mode?
 	ui = initUi()
 
+	// Read configuration
 	cmdReadFile(".pesticide")
 
 	wg.Wait()
