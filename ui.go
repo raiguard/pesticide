@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
-
-	"git.sr.ht/~emersion/go-scfg"
 )
 
 type UI struct {
@@ -65,42 +62,7 @@ retry:
 	}
 	cmdStr := string(in)
 	log.Printf("User command: '%s'\n", cmdStr)
-
-	block, err := scfg.Read(strings.NewReader(cmdStr))
-	if err != nil {
-		fmt.Println(err)
-	}
-	cmd := block[0]
-
-	// TODO: Unify command dispatch logic
-	switch cmd.Name {
-	case "quit", "q":
-		ui.send(uiShutdown)
-	case "launch", "l":
-		cfg := adapterConfigs[cmd.Params[0]]
-		if cfg == nil {
-			fmt.Printf("Unknown adapter '%s'\n", cmd.Params[0])
-			ui.send(uiNextCmd)
-			return
-		}
-		// TODO: One of these might not exist
-		newStdioAdapter(*cfg.cmd, *cfg.args)
-	// case "attach":
-	// 	newTcpAdapter(":54321")
-	case "adapter-configs", "ac":
-		fmt.Print("Configured adapters: ")
-		for name := range adapterConfigs {
-			fmt.Printf("%s ", name)
-		}
-		fmt.Print("\n")
-		ui.send(uiNextCmd)
-	case "help", "h":
-		fmt.Print("Available commands:\nadapter-configs -- List available adapter configurations\nlaunch <name> -- Launch the specified adapter\nquit -- Quit pesticide\nhelp -- Show help menu\n")
-		ui.send(uiNextCmd)
-	default:
-		ui.display("Unknown command: ", cmdStr, "\n")
-		ui.send(uiNextCmd)
-	}
+	cmdRead(cmdStr)
 }
 
 func (ui *UI) display(in ...any) {
