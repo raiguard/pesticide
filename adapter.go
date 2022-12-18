@@ -12,6 +12,7 @@ import (
 	"os/exec"
 
 	"github.com/google/go-dap"
+	"github.com/google/shlex"
 )
 
 type adapter struct {
@@ -39,8 +40,12 @@ const (
 
 // Creates a new adapter communicating over STDIO. The adapter will be spawned
 // as a child process.
-func newStdioAdapter(cmd string, args []string, launchArgs json.RawMessage) *adapter {
-	child := exec.Command(cmd, args...)
+func newStdioAdapter(cmd string, launchArgs json.RawMessage) *adapter {
+	args, err := shlex.Split(cmd)
+	if err != nil {
+		panic(err)
+	}
+	child := exec.Command(args[0], args[1:]...)
 	// // Prevent propagation of signals
 	// child.SysProcAttr = &syscall.SysProcAttr{
 	// 	Setpgid: true,

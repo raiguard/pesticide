@@ -1,0 +1,14 @@
+adapter fmtk {
+	type launch
+	cmd "fmtk debug $FACTORIO"
+	args '{"modsPath": "/home/rai/dev/factorio/1.1/mods", "hookControl": ["UltimateResearchQueue"]}'
+	# TODO: Do it like this
+	# args {
+	# 	modsPath /home/rai/dev/factorio/1.1/mods
+	# 	hookControl {
+	# 		UltimateResearchQueue
+	# 	}
+	# }
+}
+
+# vim: ft=pesticide

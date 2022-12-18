@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
+
+	"git.sr.ht/~emersion/go-scfg"
 )
 
 type UI struct {
@@ -60,23 +63,32 @@ retry:
 		log.Println("Failed to read from stdin:", err)
 		goto retry
 	}
-	cmd := string(in)
-	log.Printf("User command: '%s'\n", cmd)
+	cmdStr := string(in)
+	log.Printf("User command: '%s'\n", cmdStr)
+
+	block, err := scfg.Read(strings.NewReader(cmdStr))
+	if err != nil {
+		fmt.Println(err)
+	}
+	cmd := block[0]
 
 	// TODO: Parse scfg command
-	switch cmd {
+	switch cmd.Name {
 	case "q":
 		ui.send(uiShutdown)
 	case "launch":
-		newStdioAdapter(
-			"fmtk",
-			[]string{"debug", os.ExpandEnv("$FACTORIO")},
-			[]byte(`{"modsPath": "/home/rai/dev/factorio/1.1/mods"}`),
-		)
-	case "attach":
-		newTcpAdapter(":54321")
+		cfg := adapterConfigs[cmd.Params[0]]
+		if cfg == nil {
+			fmt.Printf("Unknown adapter '%s'\n", cmd.Params[0])
+			ui.send(uiNextCmd)
+			return
+		}
+		// TODO: One of these might not exist
+		newStdioAdapter(*cfg.cmd, *cfg.args)
+	// case "attach":
+	// 	newTcpAdapter(":54321")
 	default:
-		ui.display("Unknown command: ", cmd, "\n")
+		ui.display("Unknown command: ", cmdStr, "\n")
 		ui.send(uiNextCmd)
 	}
 }

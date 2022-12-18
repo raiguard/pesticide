@@ -7,4 +7,8 @@ require (
 	github.com/google/go-dap v0.7.0
 )
 
-require golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359 // indirect
+require (
+	git.sr.ht/~emersion/go-scfg v0.0.0-20211215104734-c2c7a15d6c99 // indirect
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
+	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359 // indirect
+)

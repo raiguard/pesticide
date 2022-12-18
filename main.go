@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	adapters map[string]*adapter
-	ui       *UI
-	wg       sync.WaitGroup
+	adapters       map[string]*adapter
+	adapterConfigs map[string]*adapterConfig
+	ui             *UI
+	wg             sync.WaitGroup
 )
 
 func main() {
@@ -28,8 +29,11 @@ func main() {
 	log.SetOutput(file)
 
 	adapters = make(map[string]*adapter)
+	adapterConfigs = make(map[string]*adapterConfig)
 	// TODO: Headless mode?
 	ui = initUi()
+
+	cmdReadFile(".pesticide")
 
 	wg.Wait()
 
