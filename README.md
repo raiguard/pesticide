@@ -12,11 +12,16 @@ It currently loads, reads adapter configurations from the `.pesticide` folder
 in your PWD, and allows you to launch one of them. It doesn't do much more than
 that yet, but things are progressing smoothly.
 
-## Build and Run
+## Build
 
 Dependencies:
 - [go](https://golang.org)
 - [scdoc](https://git.sr.ht/~sircmpwn/scdoc) (for man pages)
+
+```
+make
+sudo make install
+```
 
 ## Contributing
 
