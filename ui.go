@@ -61,7 +61,7 @@ retry:
 		goto retry
 	}
 	cmd := string(in)
-	log.Println("User command: '", cmd, "'")
+	log.Printf("User command: '%s'\n", cmd)
 
 	// TODO: Parse scfg command
 	switch cmd {

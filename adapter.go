@@ -110,6 +110,8 @@ func (a *adapter) start() {
 
 	wg.Add(2)
 
+	log.Printf("[%s] STARTED\n", a.id)
+
 	// Initialize
 	a.send(&dap.InitializeRequest{
 		Request: a.newRequest("initialize"),
@@ -133,7 +135,7 @@ func (a *adapter) finish() {
 		cmd.Process.Kill()
 	}
 	delete(adapters, a.id)
-	fmt.Println("Adapter id", a.id, "exited")
+	log.Printf("[%s] EXITED\n", a.id)
 	if len(adapters) == 0 {
 		ui.send(uiNextCmd)
 	}
@@ -150,7 +152,7 @@ func (a *adapter) sendFromQueue() {
 			log.Println("Unable to send message to adapter: ", err)
 			continue
 		}
-		log.Printf("ADAPTER <- %#v", msg)
+		log.Printf("[%s] <- %#v", a.id, msg)
 		a.rw.Writer.Flush()
 	}
 	wg.Done()
@@ -164,7 +166,7 @@ func (a *adapter) recv() {
 			// TODO: Proper error handling
 			break
 		}
-		log.Printf("ADAPTER -> %#v", msg)
+		log.Printf("[%s] -> %#v", a.id, msg)
 		// Increment seq
 		seq := msg.GetSeq()
 		if seq > a.seq {
