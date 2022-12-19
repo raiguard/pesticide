@@ -2,22 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
-	"net"
 	"os"
 	"strings"
 
 	"git.sr.ht/~emersion/go-scfg"
+	"github.com/google/go-dap"
 )
 
 type adapterConfig struct {
-	name  string
-	type_ string
-	cmd   *string
-	addr  *net.TCPAddr
-	// Arbitrary key/value pairs
-	// args *map[string]any
+	name string
+	cmd  *string
 	args json.RawMessage
+	addr *string
 }
 
 // Cmd parses user input and configuration files using the scfg syntax, and
@@ -32,55 +31,54 @@ func cmdReadFile(path string) {
 	cmdParseBlock(block)
 }
 
-func cmdRead(input string) {
+func cmdRead(input string) error {
 	reader := strings.NewReader(input)
 	block, err := scfg.Read(reader)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
-	cmdParseBlock(block)
+	return cmdParseBlock(block)
 }
 
-func cmdParseBlock(block scfg.Block) {
+func cmdParseBlock(block scfg.Block) error {
 	for i := 0; i < len(block); i++ {
-		cmdParseDirective(block[i])
+		err := cmdParseDirective(block[i])
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func cmdParseDirective(directive *scfg.Directive) {
+func cmdParseDirective(directive *scfg.Directive) error {
 	switch directive.Name {
 	case "adapter":
-		cmdParseAdapter(directive)
-	case "launch":
-		cmdParseLaunch(directive)
-	case "quit":
-		cmdParseQuit(directive)
+		return cmdParseAdapter(directive)
+	case "launch", "l":
+		return cmdParseLaunch(directive)
+	case "quit", "q":
+		return cmdParseQuit(directive)
+	case "continue", "c":
+		return cmdParseContinue(directive)
 	default:
-		printError("Unknown command: ", directive.Name, "\n")
+		return errors.New(fmt.Sprint("Unknown command: ", directive.Name, "\n"))
 	}
 }
 
-func cmdParseAdapter(directive *scfg.Directive) {
+func cmdParseAdapter(directive *scfg.Directive) error {
 	if len(directive.Params) != 1 {
-		panic("adapter command must have only one argument")
+		return errors.New("adapter command must have only one argument")
 	}
 
 	cfg := adapterConfig{name: directive.Params[0]}
 
 	for _, child := range directive.Children {
 		switch child.Name {
-		case "type":
-			cfg.type_ = child.Params[0]
 		case "cmd":
 			expanded := os.ExpandEnv(child.Params[0])
 			cfg.cmd = &expanded
 		case "addr":
-			addr, err := net.ResolveTCPAddr("tcp", child.Params[0])
-			if err != nil {
-				panic(err)
-			}
-			cfg.addr = addr
+			cfg.addr = &child.Params[0]
 		case "args":
 			// TODO: Make this more ergonomic
 			value := child.Params[0]
@@ -92,33 +90,36 @@ func cmdParseAdapter(directive *scfg.Directive) {
 	}
 
 	adapterConfigs[directive.Params[0]] = &cfg
+
+	return nil
 }
 
-func cmdParseLaunch(directive *scfg.Directive) {
+func cmdParseLaunch(directive *scfg.Directive) error {
 	if len(directive.Params) == 0 {
-		printError("did not specify a configuration to launch\n")
-		return
+		return errors.New("did not specify a configuration to launch\n")
 	}
 	if len(adapterConfigs) == 0 {
-		printError("unknown adapter ", directive.Params[0], "\n")
-		return
+		return errors.New(fmt.Sprint("unknown adapter ", directive.Params[0], "\n"))
 	}
 	cfg := adapterConfigs[directive.Params[0]]
 	if cfg == nil {
-		printError("unknown adapter ", directive.Params[0], "\n")
-		return
+		return errors.New(fmt.Sprint("unknown adapter ", directive.Params[0], "\n"))
 	}
 	if cfg.cmd == nil {
-		printError("adapter configuration is missing 'cmd' field\n")
-		return
+		return errors.New("adapter configuration is missing 'cmd' field\n")
 	}
-	adapter := newStdioAdapter(*cfg.cmd, cfg.args)
+	adapter, err := newAdapter(*cfg)
+	if err != nil {
+		return err
+	}
 	if ui != nil {
 		ui.focusedAdapter = &adapter.id
 	}
+
+	return nil
 }
 
-func cmdParseQuit(directive *scfg.Directive) {
+func cmdParseQuit(directive *scfg.Directive) error {
 	if len(directive.Params) == 0 {
 		for _, adapter := range adapters {
 			adapter.finish()
@@ -126,22 +127,31 @@ func cmdParseQuit(directive *scfg.Directive) {
 		if ui != nil {
 			ui.send(uiShutdown)
 		}
-		return
+		return nil
 	}
 
 	adapter := adapters[directive.Params[0]]
 	if adapter == nil {
-		printError("adapter", directive.Params[0], "is not active")
-		return
+		return errors.New(fmt.Sprint("adapter", directive.Params[0], "is not active"))
 	}
 	adapter.finish()
+	return nil
 }
 
-func printError(err ...any) {
-	if ui != nil {
-		ui.display(err...)
-		ui.send(uiNextCmd)
-	} else {
-		log.Println("Error:", err)
+func cmdParseContinue(directive *scfg.Directive) error {
+	if ui == nil {
+		return nil
 	}
+	adapter := adapters[*ui.focusedAdapter]
+	if adapter == nil {
+		return nil
+	}
+	adapter.send(&dap.ContinueRequest{
+		Request: adapter.newRequest("continue"),
+		Arguments: dap.ContinueArguments{
+			// TODO:
+			ThreadId: 1,
+		},
+	})
+	return nil
 }

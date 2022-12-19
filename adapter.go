@@ -6,7 +6,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"log"
 	"net"
 	"os/exec"
@@ -40,75 +40,68 @@ const (
 	adapterRunning
 )
 
-// Creates a new adapter communicating over STDIO. The adapter will be spawned
-// as a child process.
-func newStdioAdapter(cmd string, launchArgs json.RawMessage) *adapter {
-	args, err := shlex.Split(cmd)
-	if err != nil {
-		panic(err)
+func newAdapter(config adapterConfig) (*adapter, error) {
+	var cmd *exec.Cmd
+	var conn *net.Conn
+	var rw *bufio.ReadWriter
+	if config.cmd != nil {
+		args, err := shlex.Split(*config.cmd)
+		if err != nil {
+			return nil, err
+		}
+		child := exec.Command(args[0], args[1:]...)
+		// Prevent propagation of signals
+		child.SysProcAttr = &syscall.SysProcAttr{
+			Setpgid: true,
+			Pgid:    0,
+		}
+		stdin, err := child.StdinPipe()
+		// TODO: Handle errors gracefully
+		if err != nil {
+			return nil, err
+		}
+		stdout, err := child.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+		err = child.Start()
+		if err != nil {
+			return nil, err
+		}
+		cmd = child
+
+		reader := bufio.NewReader(stdout)
+		writer := bufio.NewWriter(stdin)
+		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
 	}
-	child := exec.Command(args[0], args[1:]...)
-	// Prevent propagation of signals
-	child.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Pgid:    0,
-	}
-	stdin, err := child.StdinPipe()
-	// TODO: Handle errors gracefully
-	if err != nil {
-		panic(err)
-	}
-	stdout, err := child.StdoutPipe()
-	if err != nil {
-		panic(err)
-	}
-	err = child.Start()
-	if err != nil {
-		panic(err)
+	if config.addr != nil {
+		conn, err := net.Dial("tcp", *config.addr)
+		// TODO: Handle errors gracefully
+		if err != nil {
+			return nil, err
+		}
+
+		reader := bufio.NewReader(conn)
+		writer := bufio.NewWriter(conn)
+
+		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
 	}
 
-	reader := bufio.NewReader(stdout)
-	writer := bufio.NewWriter(stdin)
+	if rw == nil {
+		return nil, errors.New("Adapter must either have a connection or a subprocess")
+	}
 
 	a := &adapter{
-		rw:        bufio.ReadWriter{Reader: reader, Writer: writer},
-		sendQueue: make(chan dap.Message),
-
-		cmd:        child,
-		launchArgs: launchArgs,
-
-		id: fmt.Sprint(child.Process.Pid),
-
-		threads: []dap.Thread{},
+		rw:         *rw,
+		sendQueue:  make(chan dap.Message),
+		conn:       conn,
+		cmd:        cmd,
+		launchArgs: config.args,
 	}
 
 	a.start()
 
-	return a
-}
-
-// Creates a new adapter communicating over TCP. The adapter is unmanaged and
-// must have been started separately.
-func newTcpAdapter(addr string) *adapter {
-	conn, err := net.Dial("tcp", addr)
-	// TODO: Handle errors gracefully
-	if err != nil {
-		panic(err)
-	}
-
-	reader := bufio.NewReader(conn)
-	writer := bufio.NewWriter(conn)
-
-	a := &adapter{
-		rw:        bufio.ReadWriter{Reader: reader, Writer: writer},
-		conn:      &conn,
-		sendQueue: make(chan dap.Message),
-		id:        conn.LocalAddr().String(),
-	}
-
-	a.start()
-
-	return a
+	return a, nil
 }
 
 func (a *adapter) start() {

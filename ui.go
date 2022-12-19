@@ -12,6 +12,7 @@ import (
 type UI struct {
 	events chan uiEvent
 	in     *bufio.Reader
+	sigs   chan os.Signal
 
 	focusedAdapter *string
 }
@@ -33,6 +34,7 @@ func initUi() *UI {
 	ui := &UI{
 		events: make(chan uiEvent, 5),
 		in:     bufio.NewReader(os.Stdin),
+		sigs:   make(chan os.Signal),
 	}
 	go ui.eventWorker()
 	go ui.signalWorker()
@@ -55,13 +57,13 @@ eventLoop:
 		}
 	}
 	close(ui.events)
+	close(ui.sigs)
 	wg.Done()
 }
 
 func (ui *UI) signalWorker() {
-	sigs := make(chan os.Signal)
-	signal.Notify(sigs, syscall.SIGINT)
-	for range sigs {
+	signal.Notify(ui.sigs, syscall.SIGINT)
+	for range ui.sigs {
 		if ui.focusedAdapter == nil {
 			continue
 		}
@@ -70,8 +72,8 @@ func (ui *UI) signalWorker() {
 			continue
 		}
 		adapter.sendPauseRequest()
+		fmt.Println()
 	}
-	// FIXME: This will never get closed
 	wg.Done()
 }
 
@@ -85,7 +87,11 @@ retry:
 	}
 	cmdStr := string(in)
 	log.Printf("User command: '%s'\n", cmdStr)
-	cmdRead(cmdStr)
+	err = cmdRead(cmdStr)
+	if err != nil {
+		fmt.Print(err)
+		goto retry
+	}
 }
 
 func (ui *UI) display(in ...any) {
