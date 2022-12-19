@@ -6,11 +6,13 @@ import (
 	"sync"
 
 	"github.com/adrg/xdg"
+	"github.com/google/go-dap"
 )
 
 var (
 	adapters       map[string]*adapter
 	adapterConfigs map[string]*adapterConfig
+	breakpoints    map[string][]dap.SourceBreakpoint
 	ui             *UI
 	wg             sync.WaitGroup
 )
@@ -30,6 +32,7 @@ func main() {
 
 	adapters = make(map[string]*adapter)
 	adapterConfigs = make(map[string]*adapterConfig)
+	breakpoints = make(map[string][]dap.SourceBreakpoint)
 	// TODO: Headless mode?
 	ui = initUi()
 

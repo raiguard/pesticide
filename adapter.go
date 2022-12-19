@@ -127,10 +127,12 @@ func (a *adapter) start() {
 	a.send(&dap.InitializeRequest{
 		Request: a.newRequest("initialize"),
 		Arguments: dap.InitializeRequestArguments{
-			ClientID:   "pest",
-			ClientName: "Pesticide",
-			Locale:     "en-US",
-			PathFormat: "path",
+			ClientID:        "pest",
+			ClientName:      "Pesticide",
+			Locale:          "en-US",
+			PathFormat:      "path",
+			LinesStartAt1:   true,
+			ColumnsStartAt1: true,
 		},
 	})
 }
@@ -201,8 +203,8 @@ func (a *adapter) handleMessage(msg dap.Message) {
 	switch msg := msg.(type) {
 	case *dap.InitializeResponse:
 		a.onInitializeResponse(msg)
-	case *dap.ConfigurationDoneResponse:
-		a.onConfigurationDoneResponse(msg)
+	case *dap.InitializedEvent:
+		a.onInitializedEvent(msg)
 	case *dap.TerminatedEvent:
 		a.finish()
 	case *dap.OutputEvent:
@@ -214,22 +216,7 @@ func (a *adapter) handleMessage(msg dap.Message) {
 
 func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
 	a.capabilities = res.Body
-	if a.capabilities.SupportsConfigurationDoneRequest {
-		a.send(&dap.ConfigurationDoneRequest{
-			Request:   a.newRequest("configurationDone"),
-			Arguments: dap.ConfigurationDoneArguments{},
-		})
-	} else {
-		a.phase = adapterRunning
-		a.send(&dap.LaunchRequest{
-			Request:   a.newRequest("launch"),
-			Arguments: a.launchArgs,
-		})
-	}
-}
-
-func (a *adapter) onConfigurationDoneResponse(res *dap.ConfigurationDoneResponse) {
-	a.phase = adapterRunning
+	// a.phase = adapterRunning
 	a.send(&dap.LaunchRequest{
 		Request:   a.newRequest("launch"),
 		Arguments: a.launchArgs,
@@ -259,4 +246,31 @@ func (a *adapter) sendPauseRequest() {
 			ThreadId: threadId,
 		},
 	})
+}
+
+func (a *adapter) onInitializedEvent(ev *dap.InitializedEvent) {
+	a.sendSetBreakpointsRequest()
+	if a.capabilities.SupportsConfigurationDoneRequest {
+		a.send(&dap.ConfigurationDoneRequest{
+			Request:   a.newRequest("configurationDone"),
+			Arguments: dap.ConfigurationDoneArguments{},
+		})
+	}
+
+}
+
+func (a *adapter) sendSetBreakpointsRequest() {
+	for filename, breakpoints := range breakpoints {
+		a.send(&dap.SetBreakpointsRequest{
+			Request: a.newRequest("setBreakpoints"),
+			Arguments: dap.SetBreakpointsArguments{
+				Source: dap.Source{
+					Name: filename,
+					Path: filename,
+				},
+				Breakpoints: breakpoints,
+			},
+		})
+	}
+
 }
