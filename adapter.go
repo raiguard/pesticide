@@ -7,10 +7,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/google/go-dap"
 	"github.com/google/shlex"
@@ -44,6 +46,7 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 	var cmd *exec.Cmd
 	var conn *net.Conn
 	var rw *bufio.ReadWriter
+	var id string
 	if config.cmd != nil {
 		args, err := shlex.Split(*config.cmd)
 		if err != nil {
@@ -73,8 +76,12 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		reader := bufio.NewReader(stdout)
 		writer := bufio.NewWriter(stdin)
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
+		id = fmt.Sprint(cmd.Process.Pid)
 	}
 	if config.addr != nil {
+		if cmd != nil {
+			time.Sleep(time.Millisecond * 500) // Give time for the cmd to init
+		}
 		conn, err := net.Dial("tcp", *config.addr)
 		// TODO: Handle errors gracefully
 		if err != nil {
@@ -85,6 +92,7 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		writer := bufio.NewWriter(conn)
 
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
+		id = *config.addr
 	}
 
 	if rw == nil {
@@ -97,6 +105,7 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		conn:       conn,
 		cmd:        cmd,
 		launchArgs: config.args,
+		id:         id,
 	}
 
 	a.start()

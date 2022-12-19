@@ -1,5 +1,4 @@
 adapter fmtk {
-	type launch
 	cmd "fmtk debug $FACTORIO"
 	args '{"modsPath": "/home/rai/dev/factorio/1.1/mods", "hookControl": ["UltimateResearchQueue"]}'
 	# TODO: Do it like this
@@ -9,6 +8,11 @@ adapter fmtk {
 	# 		UltimateResearchQueue
 	# 	}
 	# }
+}
+
+adapter mock {
+	cmd mockserver
+	addr :54321
 }
 
 # vim: ft=pesticide
