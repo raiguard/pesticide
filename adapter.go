@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os/exec"
+	"syscall"
 
 	"github.com/google/go-dap"
 	"github.com/google/shlex"
@@ -29,6 +30,7 @@ type adapter struct {
 	id           string
 	phase        adapterState
 	seq          int
+	threads      []dap.Thread
 }
 
 type adapterState uint8
@@ -46,11 +48,11 @@ func newStdioAdapter(cmd string, launchArgs json.RawMessage) *adapter {
 		panic(err)
 	}
 	child := exec.Command(args[0], args[1:]...)
-	// // Prevent propagation of signals
-	// child.SysProcAttr = &syscall.SysProcAttr{
-	// 	Setpgid: true,
-	// 	Pgid:    0,
-	// }
+	// Prevent propagation of signals
+	child.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+		Pgid:    0,
+	}
 	stdin, err := child.StdinPipe()
 	// TODO: Handle errors gracefully
 	if err != nil {
@@ -76,6 +78,8 @@ func newStdioAdapter(cmd string, launchArgs json.RawMessage) *adapter {
 		launchArgs: launchArgs,
 
 		id: fmt.Sprint(child.Process.Pid),
+
+		threads: []dap.Thread{},
 	}
 
 	a.start()
@@ -201,6 +205,8 @@ func (a *adapter) handleMessage(msg dap.Message) {
 		a.finish()
 	case *dap.OutputEvent:
 		a.onOutputEvent(msg)
+	case *dap.StoppedEvent:
+		a.onStoppedEvent(msg)
 	}
 }
 
@@ -230,4 +236,25 @@ func (a *adapter) onConfigurationDoneResponse(res *dap.ConfigurationDoneResponse
 
 func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
 	ui.display(ev.Body.Output)
+}
+
+func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
+	ui.display(a.id, " stopped: ", ev.Body.Reason, "\n")
+	ui.send(uiNextCmd)
+}
+
+func (a *adapter) sendPauseRequest() {
+	var threadId int
+	if len(a.threads) == 0 {
+		threadId = 1
+	} else {
+		// TODO: Selected thread
+		threadId = a.threads[0].Id
+	}
+	a.send(&dap.PauseRequest{
+		Request: a.newRequest("pause"),
+		Arguments: dap.PauseArguments{
+			ThreadId: threadId,
+		},
+	})
 }

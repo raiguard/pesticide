@@ -10,6 +10,16 @@ import (
 	"git.sr.ht/~emersion/go-scfg"
 )
 
+type adapterConfig struct {
+	name  string
+	type_ string
+	cmd   *string
+	addr  *net.TCPAddr
+	// Arbitrary key/value pairs
+	// args *map[string]any
+	args json.RawMessage
+}
+
 // Cmd parses user input and configuration files using the scfg syntax, and
 // executes UI or adapter commands.
 
@@ -49,16 +59,6 @@ func cmdParseDirective(directive *scfg.Directive) {
 	default:
 		printError("Unknown command: ", directive.Name, "\n")
 	}
-}
-
-type adapterConfig struct {
-	name  string
-	type_ string
-	cmd   *string
-	addr  *net.TCPAddr
-	// Arbitrary key/value pairs
-	// args *map[string]interface{}
-	args json.RawMessage
 }
 
 func cmdParseAdapter(directive *scfg.Directive) {
@@ -112,7 +112,10 @@ func cmdParseLaunch(directive *scfg.Directive) {
 		printError("adapter configuration is missing 'cmd' field\n")
 		return
 	}
-	newStdioAdapter(*cfg.cmd, cfg.args)
+	adapter := newStdioAdapter(*cfg.cmd, cfg.args)
+	if ui != nil {
+		ui.focusedAdapter = &adapter.id
+	}
 }
 
 func cmdParseQuit(directive *scfg.Directive) {
