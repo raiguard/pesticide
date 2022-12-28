@@ -19,15 +19,9 @@ var (
 
 func main() {
 	// Logging
-	// TODO: Handle these errors
-	logPath, err := xdg.StateFile("pesticide.log")
-	if err != nil {
-		panic(err)
-	}
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
-	if err != nil {
-		panic(err)
-	}
+	// FIXME: Handle these errors
+	logPath, _ := xdg.StateFile("pesticide.log")
+	file, _ := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
 	log.SetOutput(file)
 
 	adapters = make(map[string]*adapter)
