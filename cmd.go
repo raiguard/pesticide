@@ -45,6 +45,52 @@ func cmdRead(input string) error {
 	return handler(args[1:])
 }
 
+func cmdParseBreak(args []string) error {
+	if len(args) != 2 {
+		return errors.New("break command must have two arguments")
+	}
+	filename, err := filepath.Abs(args[0])
+	if err != nil {
+		return err
+	}
+	line, err := strconv.ParseInt(args[1], 0, 0)
+	if err != nil {
+		return err
+	}
+
+	if breakpoints[filename] == nil {
+		breakpoints[filename] = []dap.SourceBreakpoint{}
+	}
+	breakpoints[filename] = append(breakpoints[filename], dap.SourceBreakpoint{Line: int(line)})
+
+	if ui != nil && ui.focusedAdapter != nil {
+		adapter := adapters[*ui.focusedAdapter]
+		if adapter != nil {
+			adapter.sendSetBreakpointsRequest()
+		}
+	}
+
+	return errors.New(fmt.Sprint("Set breakpoint at ", filename, " line ", line, "\n"))
+}
+
+func cmdParseContinue(args []string) error {
+	if ui == nil {
+		return nil
+	}
+	adapter := adapters[*ui.focusedAdapter]
+	if adapter == nil {
+		return nil
+	}
+	adapter.send(&dap.ContinueRequest{
+		Request: adapter.newRequest("continue"),
+		Arguments: dap.ContinueArguments{
+			// TODO:
+			ThreadId: 1,
+		},
+	})
+	return nil
+}
+
 func cmdParseLaunch(args []string) error {
 	if len(args) == 0 {
 		return errors.New("did not specify a configuration to launch\n")
@@ -80,50 +126,4 @@ func cmdParseQuit(args []string) error {
 	}
 	adapter.finish()
 	return nil
-}
-
-func cmdParseContinue(args []string) error {
-	if ui == nil {
-		return nil
-	}
-	adapter := adapters[*ui.focusedAdapter]
-	if adapter == nil {
-		return nil
-	}
-	adapter.send(&dap.ContinueRequest{
-		Request: adapter.newRequest("continue"),
-		Arguments: dap.ContinueArguments{
-			// TODO:
-			ThreadId: 1,
-		},
-	})
-	return nil
-}
-
-func cmdParseBreak(args []string) error {
-	if len(args) != 2 {
-		return errors.New("break command must have two arguments")
-	}
-	filename, err := filepath.Abs(args[0])
-	if err != nil {
-		return err
-	}
-	line, err := strconv.ParseInt(args[1], 0, 0)
-	if err != nil {
-		return err
-	}
-
-	if breakpoints[filename] == nil {
-		breakpoints[filename] = []dap.SourceBreakpoint{}
-	}
-	breakpoints[filename] = append(breakpoints[filename], dap.SourceBreakpoint{Line: int(line)})
-
-	if ui != nil && ui.focusedAdapter != nil {
-		adapter := adapters[*ui.focusedAdapter]
-		if adapter != nil {
-			adapter.sendSetBreakpointsRequest()
-		}
-	}
-
-	return errors.New(fmt.Sprint("Set breakpoint at ", filename, " line ", line, "\n"))
 }
