@@ -59,7 +59,6 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 			Pgid:    0,
 		}
 		stdin, err := child.StdinPipe()
-		// TODO: Handle errors gracefully
 		if err != nil {
 			return nil, err
 		}

@@ -66,10 +66,15 @@ func parseConfig(path string) {
 	if len(config.Adapters) == 0 {
 		abort(errors.New("No adapters were specified"))
 	}
-	for _, adapter := range config.Adapters {
+	for name, adapter := range config.Adapters {
 		if adapter.Addr == nil && adapter.Cmd == nil {
 			abort(errors.New("Adapters must have an address or command to run"))
 		}
+		if adapter.Cmd != nil {
+			expanded := os.ExpandEnv(*adapter.Cmd)
+			adapter.Cmd = &expanded
+		}
+		config.Adapters[name] = adapter
 	}
 }
 
