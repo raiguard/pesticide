@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	"strings"
 
-	"git.sr.ht/~emersion/go-scfg"
 	"github.com/google/go-dap"
+	"github.com/google/shlex"
 )
 
 type adapterConfig struct {
@@ -22,63 +21,50 @@ type adapterConfig struct {
 // executes UI or adapter commands.
 
 func cmdRead(input string) error {
-	reader := strings.NewReader(input)
-	block, err := scfg.Read(reader)
+	args, err := shlex.Split(input)
 	if err != nil {
 		return err
 	}
-	return cmdParseBlock(block)
-}
-
-func cmdParseBlock(block scfg.Block) error {
-	for i := 0; i < len(block); i++ {
-		err := cmdParseDirective(block[i])
-		if err != nil {
-			return err
-		}
+	if len(args) == 0 {
+		return nil
 	}
-	return nil
-}
-
-func cmdParseDirective(directive *scfg.Directive) error {
-	switch directive.Name {
-	case "launch", "l":
-		return cmdParseLaunch(directive)
-	case "quit", "q":
-		return cmdParseQuit(directive)
-	case "continue", "c":
-		return cmdParseContinue(directive)
+	var handler func([]string) error
+	switch args[0] {
 	case "break", "b":
-		return cmdParseBreak(directive)
+		handler = cmdParseBreak
+	case "continue", "c":
+		handler = cmdParseContinue
+	case "launch", "l":
+		handler = cmdParseLaunch
+	case "quit", "q":
+		handler = cmdParseQuit
 	default:
-		return errors.New(fmt.Sprint("Unknown command: ", directive.Name, "\n"))
+		fmt.Printf("Unknown command: %s", args[0])
+		return nil
 	}
+	return handler(args[1:])
 }
 
-func cmdParseLaunch(directive *scfg.Directive) error {
-	if len(directive.Params) == 0 {
+func cmdParseLaunch(args []string) error {
+	if len(args) == 0 {
 		return errors.New("did not specify a configuration to launch\n")
 	}
-	cfg, ok := config.Adapters[directive.Params[0]]
+	adapterConfig, ok := config.Adapters[args[0]]
 	if !ok {
-		return errors.New(fmt.Sprint("unknown adapter ", directive.Params[0], "\n"))
+		return errors.New(fmt.Sprint("unknown adapter ", args[0], "\n"))
 	}
-	if cfg.Cmd == nil {
-		return errors.New("adapter configuration is missing 'cmd' field\n")
-	}
-	adapter, err := newAdapter(cfg)
+	adapter, err := newAdapter(adapterConfig)
 	if err != nil {
 		return err
 	}
 	if ui != nil {
 		ui.focusedAdapter = &adapter.id
 	}
-
 	return nil
 }
 
-func cmdParseQuit(directive *scfg.Directive) error {
-	if len(directive.Params) == 0 {
+func cmdParseQuit(args []string) error {
+	if len(args) == 0 {
 		for _, adapter := range adapters {
 			adapter.finish()
 		}
@@ -88,15 +74,15 @@ func cmdParseQuit(directive *scfg.Directive) error {
 		return nil
 	}
 
-	adapter := adapters[directive.Params[0]]
+	adapter := adapters[args[0]]
 	if adapter == nil {
-		return errors.New(fmt.Sprint("adapter", directive.Params[0], "is not active"))
+		return errors.New(fmt.Sprint("adapter", args[0], "is not active"))
 	}
 	adapter.finish()
 	return nil
 }
 
-func cmdParseContinue(directive *scfg.Directive) error {
+func cmdParseContinue(args []string) error {
 	if ui == nil {
 		return nil
 	}
@@ -114,15 +100,15 @@ func cmdParseContinue(directive *scfg.Directive) error {
 	return nil
 }
 
-func cmdParseBreak(directive *scfg.Directive) error {
-	if len(directive.Params) != 2 {
+func cmdParseBreak(args []string) error {
+	if len(args) != 2 {
 		return errors.New("break command must have two arguments")
 	}
-	filename, err := filepath.Abs(directive.Params[0])
+	filename, err := filepath.Abs(args[0])
 	if err != nil {
 		return err
 	}
-	line, err := strconv.ParseInt(directive.Params[1], 0, 0)
+	line, err := strconv.ParseInt(args[1], 0, 0)
 	if err != nil {
 		return err
 	}
