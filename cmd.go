@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,23 +13,13 @@ import (
 )
 
 type adapterConfig struct {
-	name string
-	cmd  *string
-	args json.RawMessage
-	addr *string
+	Cmd  *string
+	Args json.RawMessage
+	Addr *string
 }
 
 // Cmd parses user input and configuration files using the scfg syntax, and
 // executes UI or adapter commands.
-
-func cmdReadFile(path string) {
-	block, err := scfg.Load(path)
-	if err != nil {
-		log.Println("Failed to read file", path, ":", err)
-		return
-	}
-	cmdParseBlock(block)
-}
 
 func cmdRead(input string) error {
 	reader := strings.NewReader(input)
@@ -54,8 +42,6 @@ func cmdParseBlock(block scfg.Block) error {
 
 func cmdParseDirective(directive *scfg.Directive) error {
 	switch directive.Name {
-	case "adapter":
-		return cmdParseAdapter(directive)
 	case "launch", "l":
 		return cmdParseLaunch(directive)
 	case "quit", "q":
@@ -69,50 +55,18 @@ func cmdParseDirective(directive *scfg.Directive) error {
 	}
 }
 
-func cmdParseAdapter(directive *scfg.Directive) error {
-	if len(directive.Params) != 1 {
-		return errors.New("adapter command must have only one argument")
-	}
-
-	cfg := adapterConfig{name: directive.Params[0]}
-
-	for _, child := range directive.Children {
-		switch child.Name {
-		case "cmd":
-			expanded := os.ExpandEnv(child.Params[0])
-			cfg.cmd = &expanded
-		case "addr":
-			cfg.addr = &child.Params[0]
-		case "args":
-			// TODO: Make this more ergonomic
-			value := child.Params[0]
-			bytes := make(json.RawMessage, len(value))
-			copy(bytes, value)
-			cfg.args = bytes
-		default:
-		}
-	}
-
-	adapterConfigs[directive.Params[0]] = &cfg
-
-	return nil
-}
-
 func cmdParseLaunch(directive *scfg.Directive) error {
 	if len(directive.Params) == 0 {
 		return errors.New("did not specify a configuration to launch\n")
 	}
-	if len(adapterConfigs) == 0 {
+	cfg, ok := config.Adapters[directive.Params[0]]
+	if !ok {
 		return errors.New(fmt.Sprint("unknown adapter ", directive.Params[0], "\n"))
 	}
-	cfg := adapterConfigs[directive.Params[0]]
-	if cfg == nil {
-		return errors.New(fmt.Sprint("unknown adapter ", directive.Params[0], "\n"))
-	}
-	if cfg.cmd == nil {
+	if cfg.Cmd == nil {
 		return errors.New("adapter configuration is missing 'cmd' field\n")
 	}
-	adapter, err := newAdapter(*cfg)
+	adapter, err := newAdapter(cfg)
 	if err != nil {
 		return err
 	}

@@ -30,15 +30,15 @@ type adapter struct {
 	// State
 	capabilities dap.Capabilities
 	id           string
-	phase        adapterState
+	phase        adapterPhase
 	seq          int
 	threads      []dap.Thread
 }
 
-type adapterState uint8
+type adapterPhase uint8
 
 const (
-	adapterInitializing adapterState = iota
+	adapterInitializing adapterPhase = iota
 	adapterRunning
 )
 
@@ -47,8 +47,8 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 	var conn *net.Conn
 	var rw *bufio.ReadWriter
 	var id string
-	if config.cmd != nil {
-		args, err := shlex.Split(*config.cmd)
+	if config.Cmd != nil {
+		args, err := shlex.Split(*config.Cmd)
 		if err != nil {
 			return nil, err
 		}
@@ -78,11 +78,11 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
 		id = fmt.Sprint(cmd.Process.Pid)
 	}
-	if config.addr != nil {
+	if config.Addr != nil {
 		if cmd != nil {
 			time.Sleep(time.Millisecond * 500) // Give time for the cmd to init
 		}
-		conn, err := net.Dial("tcp", *config.addr)
+		conn, err := net.Dial("tcp", *config.Addr)
 		// TODO: Handle errors gracefully
 		if err != nil {
 			return nil, err
@@ -92,7 +92,7 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		writer := bufio.NewWriter(conn)
 
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
-		id = *config.addr
+		id = *config.Addr
 	}
 
 	if rw == nil {
@@ -104,7 +104,7 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		sendQueue:  make(chan dap.Message),
 		conn:       conn,
 		cmd:        cmd,
-		launchArgs: config.args,
+		launchArgs: config.Args,
 		id:         id,
 	}
 

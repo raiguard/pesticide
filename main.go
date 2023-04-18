@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -10,32 +13,66 @@ import (
 )
 
 var (
-	adapters       map[string]*adapter
-	adapterConfigs map[string]*adapterConfig
-	breakpoints    map[string][]dap.SourceBreakpoint
-	ui             *UI
-	wg             sync.WaitGroup
+	adapters    map[string]*adapter
+	breakpoints map[string][]dap.SourceBreakpoint
+	config      configFile
+	ui          *UI
+	wg          sync.WaitGroup
 )
+
+func abort(message error) {
+	if message != nil {
+		fmt.Println(message)
+	}
+	os.Exit(1)
+}
 
 func main() {
 	// Logging
-	// FIXME: Handle these errors
-	logPath, _ := xdg.StateFile("pesticide.log")
-	file, _ := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	logPath, err := xdg.StateFile("pesticide.log")
+	if err != nil {
+		abort(err)
+	}
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		abort(err)
+	}
 	log.SetOutput(file)
 
 	adapters = make(map[string]*adapter)
-	adapterConfigs = make(map[string]*adapterConfig)
 	breakpoints = make(map[string][]dap.SourceBreakpoint)
-	// TODO: Headless mode?
-	ui = initUi()
 
-	// Read configuration
-	cmdReadFile(".pesticide")
+	// TODO: Handle vscode-style launch.json?
+	parseConfig(".pesticide")
+
+	ui = initUi()
 
 	wg.Wait()
 
 	for _, a := range adapters {
 		a.finish()
 	}
+}
+
+func parseConfig(path string) {
+	file, err := os.ReadFile(path)
+	if err != nil {
+		abort(err)
+	}
+	if err = json.Unmarshal(file, &config); err != nil {
+		abort(err)
+	}
+
+	if len(config.Adapters) == 0 {
+		abort(errors.New("No adapters were specified"))
+	}
+	for _, adapter := range config.Adapters {
+		if adapter.Addr == nil && adapter.Cmd == nil {
+			abort(errors.New("Adapters must have an address or command to run"))
+		}
+	}
+}
+
+type configFile struct {
+	Adapters map[string]adapterConfig
 }

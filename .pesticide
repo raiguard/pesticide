@@ -1,18 +1,15 @@
-adapter fmtk {
-	cmd "fmtk debug $FACTORIO"
-	args '{"modsPath": "/home/rai/dev/factorio/1.1/mods", "hookControl": ["UltimateResearchQueue"]}'
-	# TODO: Do it like this
-	# args {
-	# 	modsPath /home/rai/dev/factorio/1.1/mods
-	# 	hookControl {
-	# 		UltimateResearchQueue
-	# 	}
-	# }
+{
+  "adapters": {
+    "fmtk": {
+      "cmd": "fmtk debug /home/rai/dev/factorio/1.1/bin/x64/factorio",
+      "args": {
+        "hookControl": [ "UltimateResearchQueue" ],
+        "modsPath": "/home/rai/dev/factorio/1.1/mods"
+      }
+    },
+    "mock": {
+      "cmd": "mockserver",
+      "addr": ":12345"
+    }
+  }
 }
-
-adapter mock {
-	cmd mockserver
-	addr :54321
-}
-
-# vim: ft=pesticide
