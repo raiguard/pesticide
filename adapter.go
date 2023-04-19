@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os/exec"
@@ -174,8 +175,9 @@ func (a *adapter) recv() {
 	for {
 		msg, err := dap.ReadProtocolMessage(a.rw.Reader)
 		if err != nil {
-			log.Println("Error parsing adapter message: ", err)
-			// TODO: Proper error handling
+			if err != io.EOF {
+				log.Println("Error parsing adapter message: ", err)
+			}
 			break
 		}
 		switch msg.(type) {
