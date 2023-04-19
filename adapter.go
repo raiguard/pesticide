@@ -178,7 +178,11 @@ func (a *adapter) recv() {
 			// TODO: Proper error handling
 			break
 		}
-		log.Printf("[%s] -> %#v", a.id, msg)
+		switch msg.(type) {
+		case *dap.OutputEvent:
+		default:
+			log.Printf("[%s] -> %#v", a.id, msg)
+		}
 		// Increment seq
 		seq := msg.GetSeq()
 		if seq > a.seq {
