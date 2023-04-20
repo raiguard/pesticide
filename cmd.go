@@ -110,20 +110,16 @@ func cmdParseLaunch(args []string) error {
 }
 
 func cmdParseQuit(args []string) error {
-	if len(args) == 0 {
-		for _, adapter := range adapters {
+	if focused := ui.focusedAdapter; focused != nil {
+		adapter := adapters[*focused]
+		ui.focusedAdapter = nil
+		if adapter != nil {
 			adapter.finish()
+			return nil
 		}
-		if ui != nil {
-			ui.send(uiEvent{uiShutdown, ""})
-		}
-		return nil
 	}
-
-	adapter := adapters[args[0]]
-	if adapter == nil {
-		return errors.New(fmt.Sprint("adapter", args[0], "is not active"))
+	if ui != nil {
+		ui.send(uiEvent{uiShutdown, ""})
 	}
-	adapter.finish()
 	return nil
 }

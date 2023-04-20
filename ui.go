@@ -55,12 +55,13 @@ eventLoop:
 			fmt.Printf("\033[2K\r%s\r\n", event.data)
 			ui.rl.Refresh()
 		case uiShutdown:
-			// FIXME: You have to type quit twice to actually quit
 			break eventLoop
 		}
 	}
 	close(ui.events)
-	ui.rl.Close()
+	ui.rl.Clean()
+	// FIXME: This blocks until the user presses enter again
+	// ui.rl.Close()
 	wg.Done()
 }
 
