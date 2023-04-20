@@ -227,11 +227,11 @@ func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
 }
 
 func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
-	ui.display(strings.TrimSpace(ev.Body.Output))
+	ui.print(strings.TrimSpace(ev.Body.Output))
 }
 
 func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
-	ui.display(a.id, " stopped: ", ev.Body.Reason)
+	ui.print(a.id, " stopped: ", ev.Body.Reason)
 }
 
 func (a *adapter) sendPauseRequest() {

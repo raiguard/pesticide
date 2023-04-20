@@ -49,7 +49,7 @@ eventLoop:
 		case uiCommand:
 			err := cmdRead(event.data)
 			if err != nil {
-				ui.display(err)
+				ui.print(err)
 			}
 		case uiDisplay:
 			fmt.Printf("\033[2K\r%s\r\n", event.data)
@@ -75,8 +75,12 @@ func (ui *UI) inputWorker() {
 	}
 }
 
-func (ui *UI) display(in ...any) {
+func (ui *UI) print(in ...any) {
 	ui.events <- uiEvent{kind: uiDisplay, data: fmt.Sprint(in...)}
+}
+
+func (ui *UI) printf(format string, in ...any) {
+	ui.print(fmt.Sprintf(format, in...))
 }
 
 func (ui *UI) send(ev uiEvent) {

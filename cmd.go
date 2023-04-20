@@ -39,7 +39,7 @@ func cmdRead(input string) error {
 	case "quit", "q":
 		handler = cmdParseQuit
 	default:
-		fmt.Printf("Unknown command: %s", args[0])
+		ui.printf("Unknown command: %s", args[0])
 		return nil
 	}
 	return handler(args[1:])
