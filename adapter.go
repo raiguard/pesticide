@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -149,9 +150,6 @@ func (a *adapter) finish() {
 	}
 	delete(adapters, a.id)
 	log.Printf("[%s] EXITED\n", a.id)
-	if len(adapters) == 0 {
-		ui.send(uiNextCmd)
-	}
 }
 
 func (a *adapter) send(message dap.Message) {
@@ -229,12 +227,11 @@ func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
 }
 
 func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
-	ui.display(ev.Body.Output)
+	ui.display(strings.TrimSpace(ev.Body.Output))
 }
 
 func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
-	ui.display(a.id, " stopped: ", ev.Body.Reason, "\n")
-	ui.send(uiNextCmd)
+	ui.display(a.id, " stopped: ", ev.Body.Reason)
 }
 
 func (a *adapter) sendPauseRequest() {

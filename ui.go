@@ -1,18 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
+
+	"github.com/chzyer/readline"
 )
 
 type UI struct {
 	events chan uiEvent
-	in     *bufio.Reader
-	sigs   chan os.Signal
+	rl     *readline.Instance
 
 	focusedAdapter *string
 }
@@ -25,72 +21,56 @@ type uiEvent struct {
 type uiEventKind uint8
 
 const (
-	uiNextCmd uiEventKind = iota
-	uiShutdown
+	uiCommand uiEventKind = iota
 	uiDisplay
+	uiShutdown
 )
 
 func initUi() *UI {
+	rl, err := readline.New("(pest) ")
+	if err != nil {
+		panic(err)
+	}
 	ui := &UI{
 		events: make(chan uiEvent, 5),
-		in:     bufio.NewReader(os.Stdin),
-		sigs:   make(chan os.Signal),
+		rl:     rl,
 	}
 	go ui.eventWorker()
-	go ui.signalWorker()
-	wg.Add(2)
-	ui.send(uiNextCmd)
+	go ui.inputWorker() // Will be closed at the end of eventWorker
+	wg.Add(1)
 	return ui
 }
 
+// FIXME: This should be the primary program loop
 func (ui *UI) eventWorker() {
 eventLoop:
 	for event := range ui.events {
 		switch event.kind {
-		// FIXME: This isn't working out very well
-		case uiNextCmd:
-			ui.handleNextCmd()
+		case uiCommand:
+			err := cmdRead(event.data)
+			if err != nil {
+				ui.display(err)
+			}
 		case uiDisplay:
-			fmt.Print(event.data)
+			fmt.Printf("\033[2K\r%s\r\n", event.data)
+			ui.rl.Refresh()
 		case uiShutdown:
+			// FIXME: You have to type quit twice to actually quit
 			break eventLoop
 		}
 	}
 	close(ui.events)
-	close(ui.sigs)
+	ui.rl.Close()
 	wg.Done()
 }
 
-func (ui *UI) signalWorker() {
-	signal.Notify(ui.sigs, syscall.SIGINT)
-	for range ui.sigs {
-		if ui.focusedAdapter == nil {
-			continue
+func (ui *UI) inputWorker() {
+	for {
+		line, err := ui.rl.Readline()
+		if err != nil { // io.EOF
+			break
 		}
-		adapter := adapters[*ui.focusedAdapter]
-		if adapter == nil {
-			continue
-		}
-		adapter.sendPauseRequest()
-		fmt.Println()
-	}
-	wg.Done()
-}
-
-func (ui *UI) handleNextCmd() {
-retry:
-	fmt.Print("(pest) ")
-	in, _, err := ui.in.ReadLine()
-	if err != nil {
-		log.Println("Failed to read from stdin:", err)
-		goto retry
-	}
-	cmdStr := string(in)
-	log.Printf("User command: '%s'\n", cmdStr)
-	err = cmdRead(cmdStr)
-	if err != nil {
-		fmt.Print(err)
-		goto retry
+		ui.send(uiEvent{uiCommand, line})
 	}
 }
 
@@ -98,6 +78,6 @@ func (ui *UI) display(in ...any) {
 	ui.events <- uiEvent{kind: uiDisplay, data: fmt.Sprint(in...)}
 }
 
-func (ui *UI) send(kind uiEventKind) {
-	ui.events <- uiEvent{kind: kind}
+func (ui *UI) send(ev uiEvent) {
+	ui.events <- ev
 }

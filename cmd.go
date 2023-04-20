@@ -70,7 +70,7 @@ func cmdParseBreak(args []string) error {
 		}
 	}
 
-	return errors.New(fmt.Sprint("Set breakpoint at ", filename, " line ", line, "\n"))
+	return errors.New(fmt.Sprint("Set breakpoint at ", filename, " line ", line))
 }
 
 func cmdParseContinue(args []string) error {
@@ -115,7 +115,7 @@ func cmdParseQuit(args []string) error {
 			adapter.finish()
 		}
 		if ui != nil {
-			ui.send(uiShutdown)
+			ui.send(uiEvent{uiShutdown, ""})
 		}
 		return nil
 	}

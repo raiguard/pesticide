@@ -49,8 +49,8 @@ func main() {
 
 	wg.Wait()
 
-	for _, a := range adapters {
-		a.finish()
+	for _, adapter := range adapters {
+		adapter.finish()
 	}
 }
 
