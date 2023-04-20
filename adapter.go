@@ -149,9 +149,6 @@ func (a *adapter) finish() {
 	}
 	delete(adapters, a.id)
 	log.Printf("[%s] EXITED\n", a.id)
-	if len(adapters) == 0 {
-		ui.send(uiNextCmd)
-	}
 }
 
 func (a *adapter) send(message dap.Message) {
@@ -234,7 +231,6 @@ func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
 
 func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
 	ui.display(a.id, " stopped: ", ev.Body.Reason, "\n")
-	ui.send(uiNextCmd)
 }
 
 func (a *adapter) sendPauseRequest() {

@@ -3,17 +3,24 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+
+	"golang.org/x/term"
 )
 
 type UI struct {
+	// Terminal internals
+	currentCmd []byte
+	in         *bufio.Reader
+	oldState   *term.State
+	// Channels
 	events chan uiEvent
-	in     *bufio.Reader
 	sigs   chan os.Signal
-
+	// State
+	commandHistory []string
 	focusedAdapter *string
 }
 
@@ -25,21 +32,33 @@ type uiEvent struct {
 type uiEventKind uint8
 
 const (
-	uiNextCmd uiEventKind = iota
-	uiShutdown
+	uiShutdown uiEventKind = iota
 	uiDisplay
 )
 
 func initUi() *UI {
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		panic(err)
+	}
+
 	ui := &UI{
+		// Terminal internals
+		currentCmd: []byte{},
+		in:         bufio.NewReader(os.Stdin),
+		oldState:   oldState,
+		// Channels
 		events: make(chan uiEvent, 5),
-		in:     bufio.NewReader(os.Stdin),
 		sigs:   make(chan os.Signal),
+		// State
+		commandHistory: []string{},
 	}
 	go ui.eventWorker()
+	go ui.inputWorker()
 	go ui.signalWorker()
 	wg.Add(2)
-	ui.send(uiNextCmd)
+
+	ui.drawInputLine()
 	return ui
 }
 
@@ -47,18 +66,56 @@ func (ui *UI) eventWorker() {
 eventLoop:
 	for event := range ui.events {
 		switch event.kind {
-		// FIXME: This isn't working out very well
-		case uiNextCmd:
-			ui.handleNextCmd()
 		case uiDisplay:
-			fmt.Print(event.data)
+			ui.clearLine()
+			fmt.Printf("%s\r\n", strings.TrimSpace(event.data))
+			ui.drawInputLine()
 		case uiShutdown:
+			ui.clearLine()
 			break eventLoop
 		}
 	}
+	// Shut down
 	close(ui.events)
 	close(ui.sigs)
+	term.Restore(int(os.Stdin.Fd()), ui.oldState)
 	wg.Done()
+}
+
+func (ui *UI) inputWorker() {
+	var b []byte = make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(b)
+		if err != nil {
+			ui.display(err)
+			continue
+		} else if n == 0 {
+			continue
+		}
+		switch b[0] {
+		case '\r':
+			ui.drawInputLine()
+			fmt.Print("\r\n")
+			err := cmdRead(string(ui.currentCmd))
+			if err != nil {
+				ui.display(err)
+			} else {
+				ui.currentCmd = []byte{}
+			}
+		default:
+			ui.currentCmd = append(ui.currentCmd, b[0])
+		}
+		ui.drawInputLine()
+	}
+}
+
+func (ui *UI) clearLine() {
+	fmt.Print("\033[2K\r")
+}
+
+func (ui *UI) drawInputLine() {
+	ui.clearLine()
+	fmt.Printf("(pest) %s", ui.currentCmd)
 }
 
 func (ui *UI) signalWorker() {
@@ -72,26 +129,8 @@ func (ui *UI) signalWorker() {
 			continue
 		}
 		adapter.sendPauseRequest()
-		fmt.Println()
 	}
 	wg.Done()
-}
-
-func (ui *UI) handleNextCmd() {
-retry:
-	fmt.Print("(pest) ")
-	in, _, err := ui.in.ReadLine()
-	if err != nil {
-		log.Println("Failed to read from stdin:", err)
-		goto retry
-	}
-	cmdStr := string(in)
-	log.Printf("User command: '%s'\n", cmdStr)
-	err = cmdRead(cmdStr)
-	if err != nil {
-		fmt.Print(err)
-		goto retry
-	}
 }
 
 func (ui *UI) display(in ...any) {
