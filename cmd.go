@@ -36,6 +36,8 @@ func cmdRead(input string) error {
 		handler = cmdParseContinue
 	case "launch", "l":
 		handler = cmdParseLaunch
+	case "pause", "p":
+		handler = cmdParsePause
 	case "quit", "q":
 		handler = cmdParseQuit
 	default:
@@ -106,6 +108,19 @@ func cmdParseLaunch(args []string) error {
 	if ui != nil {
 		ui.focusedAdapter = &adapter.id
 	}
+	return nil
+}
+
+func cmdParsePause(args []string) error {
+	focused := ui.focusedAdapter
+	if focused == nil {
+		return errors.New(fmt.Sprint("No adapter is currently running"))
+	}
+	adapter := adapters[*focused]
+	if adapter == nil {
+		return nil
+	}
+	adapter.sendPauseRequest()
 	return nil
 }
 
