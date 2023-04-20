@@ -150,6 +150,9 @@ func (a *adapter) finish() {
 	}
 	delete(adapters, a.id)
 	log.Printf("[%s] EXITED\n", a.id)
+	if ui != nil {
+		ui.printf("Adapter %s exited", a.id)
+	}
 }
 
 func (a *adapter) send(message dap.Message) {
@@ -274,5 +277,4 @@ func (a *adapter) sendSetBreakpointsRequest() {
 			},
 		})
 	}
-
 }

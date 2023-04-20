@@ -7,9 +7,10 @@ import (
 )
 
 type UI struct {
+	// Backend
 	events chan uiEvent
 	rl     *readline.Instance
-
+	// State
 	focusedAdapter *string
 }
 
@@ -76,7 +77,7 @@ func (ui *UI) inputWorker() {
 }
 
 func (ui *UI) print(in ...any) {
-	ui.events <- uiEvent{kind: uiDisplay, data: fmt.Sprint(in...)}
+	ui.events <- uiEvent{uiDisplay, fmt.Sprint(in...)}
 }
 
 func (ui *UI) printf(format string, in ...any) {
