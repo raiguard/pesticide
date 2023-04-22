@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os/exec"
@@ -92,6 +91,7 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		reader := bufio.NewReader(conn)
 		writer := bufio.NewWriter(conn)
 
+		// TODO: Combine with STDIO input/output
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
 		id = *config.Addr
 	}
@@ -176,9 +176,6 @@ func (a *adapter) recv() {
 	for {
 		msg, err := dap.ReadProtocolMessage(a.rw.Reader)
 		if err != nil {
-			if err != io.EOF {
-				log.Println("Error parsing adapter message: ", err)
-			}
 			break
 		}
 		switch msg.(type) {

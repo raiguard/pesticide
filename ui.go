@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/chzyer/readline"
+	"github.com/wader/readline"
 )
 
 type UI struct {
@@ -61,8 +61,7 @@ eventLoop:
 	}
 	close(ui.events)
 	ui.rl.Clean()
-	// FIXME: This blocks until the user presses enter again
-	// ui.rl.Close()
+	ui.rl.Close()
 	wg.Done()
 }
 

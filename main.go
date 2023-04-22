@@ -1,3 +1,17 @@
+// PROGRAM ARCHITECTURE:
+//
+// Goroutines:
+// - Controller (main)
+// - UI input
+// - Each adapter:
+//   - Receive DAP messages
+//   - Send DAP messages
+//
+// Lifetime:
+// - Init logging
+// - Read configuration file
+// -
+
 package main
 
 import (

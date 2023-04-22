@@ -9,7 +9,7 @@
     },
     "mock": {
       "cmd": "mockserver",
-      "addr": ":12345"
+      "addr": ":54321"
     }
   }
 }
