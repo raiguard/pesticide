@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/google/go-dap"
 	"github.com/google/shlex"
@@ -34,6 +35,8 @@ func cmdRead(input string) error {
 		handler = cmdParseBreak
 	case "continue", "c":
 		handler = cmdParseContinue
+	case "evaluate", "eval", "e":
+		handler = cmdParseEvaluate
 	case "launch", "l":
 		handler = cmdParseLaunch
 	case "pause", "p":
@@ -76,7 +79,7 @@ func cmdParseBreak(args []string) error {
 }
 
 func cmdParseContinue(args []string) error {
-	if ui == nil {
+	if ui == nil || ui.focusedAdapter == nil {
 		return nil
 	}
 	adapter := adapters[*ui.focusedAdapter]
@@ -88,6 +91,22 @@ func cmdParseContinue(args []string) error {
 		Arguments: dap.ContinueArguments{
 			// TODO:
 			ThreadId: 1,
+		},
+	})
+	return nil
+}
+
+func cmdParseEvaluate(args []string) error {
+	if ui == nil || ui.focusedAdapter == nil {
+		return nil
+	}
+	adapter := adapters[*ui.focusedAdapter]
+	adapter.send(&dap.EvaluateRequest{
+		Request: adapter.newRequest("evaluate"),
+		Arguments: dap.EvaluateArguments{
+			Expression: strings.Join(args, " "),
+			FrameId:    adapter.focusedStackFrame,
+			Context:    "watch",
 		},
 	})
 	return nil

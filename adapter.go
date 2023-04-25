@@ -29,11 +29,15 @@ type adapter struct {
 	cmd        *exec.Cmd
 	launchArgs json.RawMessage
 	// State
-	capabilities dap.Capabilities
-	id           string
-	phase        adapterPhase
-	seq          int
-	threads      []dap.Thread
+	capabilities      dap.Capabilities
+	id                string
+	phase             adapterPhase
+	seq               int
+	threads           []dap.Thread
+	stackframes       map[int][]dap.StackFrame
+	pendingRequests   map[int]dap.Message
+	focusedStackFrame int
+	focusedThread     int
 }
 
 type adapterPhase uint8
@@ -101,12 +105,14 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 	}
 
 	a := &adapter{
-		rw:         *rw,
-		sendQueue:  make(chan dap.Message),
-		conn:       conn,
-		cmd:        cmd,
-		launchArgs: config.Args,
-		id:         id,
+		rw:              *rw,
+		sendQueue:       make(chan dap.Message),
+		conn:            conn,
+		cmd:             cmd,
+		launchArgs:      config.Args,
+		id:              id,
+		pendingRequests: make(map[int]dap.Message),
+		stackframes:     make(map[int][]dap.StackFrame),
 	}
 
 	a.start()
@@ -156,6 +162,7 @@ func (a *adapter) finish() {
 }
 
 func (a *adapter) send(message dap.Message) {
+	a.pendingRequests[message.GetSeq()] = message
 	a.sendQueue <- message
 }
 
@@ -202,18 +209,30 @@ func (a *adapter) newRequest(command string) dap.Request {
 }
 
 func (a *adapter) handleMessage(msg dap.Message) {
-	// TODO: Handle error responses
 	switch msg := msg.(type) {
-	case *dap.InitializeResponse:
-		a.onInitializeResponse(msg)
-	case *dap.InitializedEvent:
-		a.onInitializedEvent(msg)
-	case *dap.TerminatedEvent:
-		a.finish()
-	case *dap.OutputEvent:
-		a.onOutputEvent(msg)
-	case *dap.StoppedEvent:
-		a.onStoppedEvent(msg)
+	case dap.ResponseMessage:
+		ctx := a.pendingRequests[msg.GetResponse().RequestSeq]
+		delete(a.pendingRequests, msg.GetResponse().RequestSeq)
+		// TODO: Handle error responses
+		switch msg := msg.(type) {
+		case *dap.InitializeResponse:
+			a.onInitializeResponse(msg)
+		case *dap.StackTraceResponse:
+			a.onStackTraceResponse(msg, ctx.(*dap.StackTraceRequest))
+		case *dap.EvaluateResponse:
+			a.onEvaluateResponse(msg)
+		}
+	case dap.EventMessage:
+		switch msg := msg.(type) {
+		case *dap.InitializedEvent:
+			a.onInitializedEvent(msg)
+		case *dap.TerminatedEvent:
+			a.finish()
+		case *dap.OutputEvent:
+			a.onOutputEvent(msg)
+		case *dap.StoppedEvent:
+			a.onStoppedEvent(msg)
+		}
 	}
 }
 
@@ -232,6 +251,11 @@ func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
 
 func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
 	ui.print(a.id, " stopped: ", ev.Body.Reason)
+	a.focusedThread = ev.Body.ThreadId
+	a.send(&dap.StackTraceRequest{
+		Request:   a.newRequest("stackTrace"),
+		Arguments: dap.StackTraceArguments{ThreadId: ev.Body.ThreadId},
+	})
 }
 
 func (a *adapter) sendPauseRequest() {
@@ -239,8 +263,7 @@ func (a *adapter) sendPauseRequest() {
 	if len(a.threads) == 0 {
 		threadId = 1
 	} else {
-		// TODO: Selected thread
-		threadId = a.threads[0].Id
+		threadId = a.focusedThread
 	}
 	a.send(&dap.PauseRequest{
 		Request: a.newRequest("pause"),
@@ -258,7 +281,6 @@ func (a *adapter) onInitializedEvent(ev *dap.InitializedEvent) {
 			Arguments: dap.ConfigurationDoneArguments{},
 		})
 	}
-
 }
 
 func (a *adapter) sendSetBreakpointsRequest() {
@@ -274,4 +296,13 @@ func (a *adapter) sendSetBreakpointsRequest() {
 			},
 		})
 	}
+}
+
+func (a *adapter) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
+	a.stackframes[ctx.Arguments.ThreadId] = res.Body.StackFrames
+	a.focusedStackFrame = res.Body.StackFrames[0].Id
+}
+
+func (a *adapter) onEvaluateResponse(res *dap.EvaluateResponse) {
+	ui.print(res.Body.Result)
 }
