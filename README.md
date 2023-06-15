@@ -19,34 +19,41 @@ make
 sudo make install
 ```
 
-## Usage
+## Usage / configuration
 
 Place a `.pesticide` file in your project directory and specify your adapter
-configurations:
+configurations. The file is JSON formatted:
 
-```scfg
-adapter fmtk {
-	cmd "fmtk debug $FACTORIO"
-	args '{"modsPath": "/home/rai/dev/factorio/1.1/mods", "hookControl": ["UltimateResearchQueue"]}'
-}
-
-adapter mock {
-	cmd mockserver
-	addr :54321
+```json
+{
+  "adapters": {
+    "fmtk": {
+      "cmd": "fmtk debug /home/rai/dev/factorio/1.1/bin/x64/factorio",
+      "args": {
+        "hookControl": [ "UltimateResearchQueue" ],
+        "modsPath": "/home/rai/dev/factorio/1.1/mods"
+      }
+    },
+    "mock": {
+      "cmd": "mockserver",
+      "addr": ":54321"
+    }
+  }
 }
 ```
 
-Configuration follows the [scfg](https://git.sr.ht/~emersion/scfg) file format.
+- `cmd`: A command-line command to execute.
+- `addr`: An IP address to connect to. This can be used in combination with `cmd`.
+- `args`: Any adapter-specific arguments.
 
-Launch the `pest` executable, and it will read the configuration file. Use
-`break filename line` to set a breakpoint, and `launch <adapter name>` to
-launch the debug adapter. Use `control+c` to pause execution, `continue` to
-resume execution, and `quit` to quit the active adapter or the program.
+Launch the `pest` executable in your project directory and it will source
+the configuration file. You can now run commands.
 
-Currently, if the adapter fails to pause, then you cannot do anything. This
-will be resolved once the proper TUI is implemented.
+### Current commands
 
-## Contributing
-
-Please send questions, patches, or bug reports to the [mailing
-list](https://lists.sr.ht/~raiguard/public-inbox).
+- `break <filename> <line>`
+- `continue`
+- `evaluate <expression>`
+- `launch <adapter name>`
+- `pause`
+- `quit`
