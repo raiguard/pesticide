@@ -1,4 +1,4 @@
-module pesticide
+module github.com/raiguard/pesticide
 
 go 1.19
 

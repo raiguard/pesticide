@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -10,13 +9,8 @@ import (
 
 	"github.com/google/go-dap"
 	"github.com/google/shlex"
+	"github.com/raiguard/pesticide/adapter"
 )
-
-type adapterConfig struct {
-	Cmd  *string
-	Args json.RawMessage
-	Addr *string
-}
 
 // Cmd parses user input and configuration files using the scfg syntax, and
 // executes UI or adapter commands.
@@ -71,7 +65,7 @@ func cmdParseBreak(args []string) error {
 	if ui != nil && ui.focusedAdapter != nil {
 		adapter := adapters[*ui.focusedAdapter]
 		if adapter != nil {
-			adapter.sendSetBreakpointsRequest()
+			// adapter.sendSetBreakpointsRequest()
 		}
 	}
 
@@ -86,8 +80,8 @@ func cmdParseContinue(args []string) error {
 	if adapter == nil {
 		return nil
 	}
-	adapter.send(&dap.ContinueRequest{
-		Request: adapter.newRequest("continue"),
+	adapter.Send(&dap.ContinueRequest{
+		Request: adapter.NewRequest("continue"),
 		Arguments: dap.ContinueArguments{
 			// TODO:
 			ThreadId: 1,
@@ -101,11 +95,11 @@ func cmdParseEvaluate(args []string) error {
 		return nil
 	}
 	adapter := adapters[*ui.focusedAdapter]
-	adapter.send(&dap.EvaluateRequest{
-		Request: adapter.newRequest("evaluate"),
+	adapter.Send(&dap.EvaluateRequest{
+		Request: adapter.NewRequest("evaluate"),
 		Arguments: dap.EvaluateArguments{
 			Expression: strings.Join(args, " "),
-			FrameId:    adapter.focusedStackFrame,
+			FrameId:    adapter.FocusedStackFrame,
 			Context:    "watch",
 		},
 	})
@@ -120,12 +114,12 @@ func cmdParseLaunch(args []string) error {
 	if !ok {
 		return errors.New(fmt.Sprint("unknown adapter ", args[0], "\n"))
 	}
-	adapter, err := newAdapter(adapterConfig)
+	adapter, err := adapter.New(adapterConfig)
 	if err != nil {
 		return err
 	}
 	if ui != nil {
-		ui.focusedAdapter = &adapter.id
+		ui.focusedAdapter = &adapter.ID
 	}
 	return nil
 }
@@ -139,7 +133,7 @@ func cmdParsePause(args []string) error {
 	if adapter == nil {
 		return nil
 	}
-	adapter.sendPauseRequest()
+	// adapter.sendPauseRequest()
 	return nil
 }
 
@@ -148,7 +142,7 @@ func cmdParseQuit(args []string) error {
 		adapter := adapters[*focused]
 		ui.focusedAdapter = nil
 		if adapter != nil {
-			adapter.finish()
+			adapter.Finish()
 			return nil
 		}
 	}

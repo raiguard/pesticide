@@ -24,10 +24,11 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/google/go-dap"
+	"github.com/raiguard/pesticide/adapter"
 )
 
 var (
-	adapters    map[string]*adapter
+	adapters    map[string]*adapter.Adapter
 	breakpoints map[string][]dap.SourceBreakpoint
 	config      configFile
 	ui          *UI
@@ -53,8 +54,8 @@ func main() {
 	}
 	log.SetOutput(file)
 
-	adapters = make(map[string]*adapter)
-	breakpoints = make(map[string][]dap.SourceBreakpoint)
+	adapters = map[string]*adapter.Adapter{}
+	breakpoints = map[string][]dap.SourceBreakpoint{}
 
 	// TODO: Handle vscode-style launch.json?
 	parseConfig(".pesticide")
@@ -64,7 +65,7 @@ func main() {
 	wg.Wait()
 
 	for _, adapter := range adapters {
-		adapter.finish()
+		adapter.Finish()
 	}
 }
 
@@ -93,5 +94,5 @@ func parseConfig(path string) {
 }
 
 type configFile struct {
-	Adapters map[string]adapterConfig
+	Adapters map[string]adapter.Config
 }

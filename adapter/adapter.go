@@ -1,7 +1,6 @@
-package main
+package adapter
 
-// Adapter creates and manages communication with a debug adapter. A debugging
-// session may have zero or more adapters.
+// Package adapter implements DAP adapters via STDIO and/or TCP.
 
 import (
 	"bufio"
@@ -11,7 +10,6 @@ import (
 	"log"
 	"net"
 	"os/exec"
-	"strings"
 	"syscall"
 	"time"
 
@@ -19,35 +17,29 @@ import (
 	"github.com/google/shlex"
 )
 
-type adapter struct {
+type Adapter struct {
 	// Common I/O
 	rw        bufio.ReadWriter
 	sendQueue chan dap.Message
 	// TCP
 	conn *net.Conn
 	// Stdio
-	cmd        *exec.Cmd
+	child      *exec.Cmd
 	launchArgs json.RawMessage
+	// Lifecycle
+	ID          string
+	initialized bool
 	// State
 	capabilities      dap.Capabilities
-	id                string
-	phase             adapterPhase
 	seq               int
 	threads           []dap.Thread
 	stackframes       map[int][]dap.StackFrame
 	pendingRequests   map[int]dap.Message
-	focusedStackFrame int
-	focusedThread     int
+	FocusedStackFrame int
+	FocusedThread     int
 }
 
-type adapterPhase uint8
-
-const (
-	adapterInitializing adapterPhase = iota
-	adapterRunning
-)
-
-func newAdapter(config adapterConfig) (*adapter, error) {
+func New(config Config) (*Adapter, error) {
 	var cmd *exec.Cmd
 	var conn *net.Conn
 	var rw *bufio.ReadWriter
@@ -60,8 +52,25 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		child := exec.Command(args[0], args[1:]...)
 		// Prevent propagation of signals
 		child.SysProcAttr = &syscall.SysProcAttr{
-			Setpgid: true,
-			Pgid:    0,
+			Chroot:                     "",
+			Credential:                 &syscall.Credential{},
+			Ptrace:                     false,
+			Setsid:                     false,
+			Setpgid:                    true,
+			Setctty:                    false,
+			Noctty:                     false,
+			Ctty:                       0,
+			Foreground:                 false,
+			Pgid:                       0,
+			Pdeathsig:                  0,
+			Cloneflags:                 0,
+			Unshareflags:               0,
+			UidMappings:                []syscall.SysProcIDMap{},
+			GidMappings:                []syscall.SysProcIDMap{},
+			GidMappingsEnableSetgroups: false,
+			AmbientCaps:                []uintptr{},
+			UseCgroupFD:                false,
+			CgroupFD:                   0,
 		}
 		stdin, err := child.StdinPipe()
 		if err != nil {
@@ -104,35 +113,31 @@ func newAdapter(config adapterConfig) (*adapter, error) {
 		return nil, errors.New("Adapter must either have a connection or a subprocess")
 	}
 
-	a := &adapter{
+	a := &Adapter{
 		rw:              *rw,
 		sendQueue:       make(chan dap.Message),
 		conn:            conn,
-		cmd:             cmd,
+		child:           cmd,
 		launchArgs:      config.Args,
-		id:              id,
+		ID:              id,
 		pendingRequests: make(map[int]dap.Message),
 		stackframes:     make(map[int][]dap.StackFrame),
 	}
 
-	a.start()
-
 	return a, nil
 }
 
-func (a *adapter) start() {
-	adapters[a.id] = a
-
+func (a *Adapter) Start() {
 	go a.recv()
 	go a.sendFromQueue()
 
-	wg.Add(2)
+	// wg.Add(2)
 
-	log.Printf("[%s] STARTED\n", a.id)
+	log.Printf("[%s] STARTED\n", a.ID)
 
 	// Initialize
-	a.send(&dap.InitializeRequest{
-		Request: a.newRequest("initialize"),
+	a.Send(&dap.InitializeRequest{
+		Request: a.NewRequest("initialize"),
 		Arguments: dap.InitializeRequestArguments{
 			ClientID:        "pest",
 			ClientName:      "Pesticide",
@@ -144,51 +149,41 @@ func (a *adapter) start() {
 	})
 }
 
-func (a *adapter) finish() {
+func (a *Adapter) Finish() {
 	close(a.sendQueue)
 	conn := a.conn
 	if conn != nil {
 		(*conn).Close()
 	}
-	cmd := a.cmd
+	cmd := a.child
 	if cmd != nil {
 		cmd.Process.Kill()
 	}
-	delete(adapters, a.id)
-	log.Printf("[%s] EXITED\n", a.id)
-	if ui != nil {
-		ui.printf("Adapter %s exited", a.id)
-	}
+	log.Printf("[%s] EXITED\n", a.ID)
 }
 
-func (a *adapter) send(message dap.Message) {
+func (a *Adapter) Send(message dap.Message) {
 	a.pendingRequests[message.GetSeq()] = message
 	a.sendQueue <- message
 }
 
-func (a *adapter) sendFromQueue() {
+func (a *Adapter) sendFromQueue() {
 	for msg := range a.sendQueue {
 		err := dap.WriteProtocolMessage(a.rw.Writer, msg)
 		if err != nil {
 			log.Println("Unable to send message to adapter: ", err)
 			continue
 		}
-		log.Printf("[%s] <- %#v", a.id, msg)
+		log.Printf("[%s] <- %#v", a.ID, msg)
 		a.rw.Writer.Flush()
 	}
-	wg.Done()
 }
 
-func (a *adapter) recv() {
+func (a *Adapter) recv() {
 	for {
 		msg, err := dap.ReadProtocolMessage(a.rw.Reader)
 		if err != nil {
 			break
-		}
-		switch msg.(type) {
-		case *dap.OutputEvent:
-		default:
-			log.Printf("[%s] -> %#v", a.id, msg)
 		}
 		// Increment seq
 		seq := msg.GetSeq()
@@ -197,10 +192,9 @@ func (a *adapter) recv() {
 		}
 		a.handleMessage(msg)
 	}
-	wg.Done()
 }
 
-func (a *adapter) newRequest(command string) dap.Request {
+func (a *Adapter) NewRequest(command string) dap.Request {
 	a.seq++
 	return dap.Request{
 		ProtocolMessage: dap.ProtocolMessage{Seq: a.seq, Type: "request"},
@@ -208,7 +202,7 @@ func (a *adapter) newRequest(command string) dap.Request {
 	}
 }
 
-func (a *adapter) handleMessage(msg dap.Message) {
+func (a *Adapter) handleMessage(msg dap.Message) {
 	switch msg := msg.(type) {
 	case dap.ResponseMessage:
 		ctx := a.pendingRequests[msg.GetResponse().RequestSeq]
@@ -219,90 +213,90 @@ func (a *adapter) handleMessage(msg dap.Message) {
 			a.onInitializeResponse(msg)
 		case *dap.StackTraceResponse:
 			a.onStackTraceResponse(msg, ctx.(*dap.StackTraceRequest))
-		case *dap.EvaluateResponse:
-			a.onEvaluateResponse(msg)
+			// case *dap.EvaluateResponse:
+			// 	a.onEvaluateResponse(msg)
 		}
 	case dap.EventMessage:
 		switch msg := msg.(type) {
 		case *dap.InitializedEvent:
 			a.onInitializedEvent(msg)
 		case *dap.TerminatedEvent:
-			a.finish()
-		case *dap.OutputEvent:
-			a.onOutputEvent(msg)
+			a.Finish()
+		// case *dap.OutputEvent:
+		// 	a.onOutputEvent(msg)
 		case *dap.StoppedEvent:
 			a.onStoppedEvent(msg)
 		}
 	}
 }
 
-func (a *adapter) onInitializeResponse(res *dap.InitializeResponse) {
+func (a *Adapter) onInitializeResponse(res *dap.InitializeResponse) {
 	a.capabilities = res.Body
 	// a.phase = adapterRunning
-	a.send(&dap.LaunchRequest{
-		Request:   a.newRequest("launch"),
+	a.Send(&dap.LaunchRequest{
+		Request:   a.NewRequest("launch"),
 		Arguments: a.launchArgs,
 	})
 }
 
-func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
-	ui.print(strings.TrimSpace(ev.Body.Output))
-}
+// func (a *Adapter) onOutputEvent(ev *dap.OutputEvent) {
+// 	ui.print(strings.TrimSpace(ev.Body.Output))
+// }
 
-func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
-	ui.print(a.id, " stopped: ", ev.Body.Reason)
-	a.focusedThread = ev.Body.ThreadId
-	a.send(&dap.StackTraceRequest{
-		Request:   a.newRequest("stackTrace"),
+func (a *Adapter) onStoppedEvent(ev *dap.StoppedEvent) {
+	// ui.print(a.id, " stopped: ", ev.Body.Reason)
+	a.FocusedThread = ev.Body.ThreadId
+	a.Send(&dap.StackTraceRequest{
+		Request:   a.NewRequest("stackTrace"),
 		Arguments: dap.StackTraceArguments{ThreadId: ev.Body.ThreadId},
 	})
 }
 
-func (a *adapter) sendPauseRequest() {
+func (a *Adapter) sendPauseRequest() {
 	var threadId int
 	if len(a.threads) == 0 {
 		threadId = 1
 	} else {
-		threadId = a.focusedThread
+		threadId = a.FocusedThread
 	}
-	a.send(&dap.PauseRequest{
-		Request: a.newRequest("pause"),
+	a.Send(&dap.PauseRequest{
+		Request: a.NewRequest("pause"),
 		Arguments: dap.PauseArguments{
 			ThreadId: threadId,
 		},
 	})
 }
 
-func (a *adapter) onInitializedEvent(ev *dap.InitializedEvent) {
-	a.sendSetBreakpointsRequest()
+func (a *Adapter) onInitializedEvent(ev *dap.InitializedEvent) {
+	// a.sendSetBreakpointsRequest()
 	if a.capabilities.SupportsConfigurationDoneRequest {
-		a.send(&dap.ConfigurationDoneRequest{
-			Request:   a.newRequest("configurationDone"),
+		a.Send(&dap.ConfigurationDoneRequest{
+			Request:   a.NewRequest("configurationDone"),
 			Arguments: dap.ConfigurationDoneArguments{},
 		})
 	}
 }
 
-func (a *adapter) sendSetBreakpointsRequest() {
-	for filename, breakpoints := range breakpoints {
-		a.send(&dap.SetBreakpointsRequest{
-			Request: a.newRequest("setBreakpoints"),
-			Arguments: dap.SetBreakpointsArguments{
-				Source: dap.Source{
-					Name: filename,
-					Path: filename,
-				},
-				Breakpoints: breakpoints,
-			},
-		})
-	}
-}
+// func (a *Adapter) sendSetBreakpointsRequest() {
+// 	for filename, breakpoints := range breakpoints {
+// 		a.Send(&dap.SetBreakpointsRequest{
+// 			Request: a.newRequest("setBreakpoints"),
+// 			Arguments: dap.SetBreakpointsArguments{
+// 				Source: dap.Source{
+// 					Name: filename,
+// 					Path: filename,
+// 				},
+// 				Breakpoints: breakpoints,
+// 			},
+// 		})
+// 	}
+// }
 
-func (a *adapter) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
+func (a *Adapter) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
 	a.stackframes[ctx.Arguments.ThreadId] = res.Body.StackFrames
-	a.focusedStackFrame = res.Body.StackFrames[0].Id
+	a.FocusedStackFrame = res.Body.StackFrames[0].Id
 }
 
-func (a *adapter) onEvaluateResponse(res *dap.EvaluateResponse) {
-	ui.print(res.Body.Result)
-}
+// func (a *Adapter) onEvaluateResponse(res *dap.EvaluateResponse) {
+// 	ui.print(res.Body.Result)
+// }
