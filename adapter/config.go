@@ -3,7 +3,7 @@ package adapter
 import "encoding/json"
 
 type Config struct {
-	Cmd  *string
-	Args json.RawMessage
-	Addr *string
+	Cmd  *string         `json:"command"`
+	Args json.RawMessage `json:"arguments"`
+	Addr *string         `json:"address"`
 }

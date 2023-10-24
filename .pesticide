@@ -1,15 +1,15 @@
 {
   "adapters": {
     "fmtk": {
-      "cmd": "fmtk debug /home/rai/dev/factorio/1.1/bin/x64/factorio",
-      "args": {
+      "command": "fmtk debug /home/rai/dev/factorio/1.1/bin/x64/factorio",
+      "arguments": {
         "hookControl": [ "UltimateResearchQueue" ],
         "modsPath": "/home/rai/dev/factorio/1.1/mods"
       }
     },
     "mock": {
-      "cmd": "mockserver",
-      "addr": ":54321"
+      "command": "mockserver",
+      "address": ":54321"
     }
   }
 }
