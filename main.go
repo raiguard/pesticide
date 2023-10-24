@@ -25,14 +25,17 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/google/go-dap"
 	"github.com/raiguard/pesticide/adapter"
+	"github.com/raiguard/pesticide/command"
+	"github.com/wader/readline"
 )
 
 var (
 	adapters    map[string]*adapter.Adapter
 	breakpoints map[string][]dap.SourceBreakpoint
 	config      configFile
-	ui          *UI
-	wg          sync.WaitGroup
+	// ui          *UI
+	rl *readline.Instance
+	wg sync.WaitGroup
 )
 
 func abort(message error) {
@@ -60,12 +63,37 @@ func main() {
 	// TODO: Handle vscode-style launch.json?
 	parseConfig(".pesticide")
 
-	ui = initUi()
+	rl, err = readline.New("(pesticide) ")
+	if err != nil {
+		panic(err)
+	}
 
-	wg.Wait()
+	mainLoop()
 
-	for _, adapter := range adapters {
-		adapter.Finish()
+	// ui = initUi()
+
+	// wg.Wait()
+
+	// for _, adapter := range adapters {
+	// 	adapter.Finish()
+	// }
+}
+
+func mainLoop() {
+	for {
+		line, err := rl.Readline()
+		if err != nil { // io.EOF
+			break
+		}
+		cmd, err := command.Parse(line)
+		if err != nil {
+			fmt.Println("error:", err)
+			continue
+		}
+		fmt.Printf("%+v\n", cmd)
+		if cmd.Noun == "quit" {
+			return
+		}
 	}
 }
 
