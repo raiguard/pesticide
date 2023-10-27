@@ -11,7 +11,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/google/go-dap"
 	"github.com/raiguard/pesticide/adapter"
-	"github.com/raiguard/pesticide/command"
+	"github.com/raiguard/pesticide/ui"
 	"github.com/wader/readline"
 )
 
@@ -54,7 +54,7 @@ func main() {
 		panic(err)
 	}
 
-	mainLoop()
+	ui.Run()
 
 	// ui = initUi()
 
@@ -63,24 +63,6 @@ func main() {
 	// for _, adapter := range adapters {
 	// 	adapter.Finish()
 	// }
-}
-
-func mainLoop() {
-	for {
-		line, err := rl.Readline()
-		if err != nil { // io.EOF
-			break
-		}
-		cmd, err := command.Parse(line)
-		if err != nil {
-			fmt.Println("error:", err)
-			continue
-		}
-		fmt.Printf("%+v\n", cmd)
-		if cmd.Noun == "quit" {
-			return
-		}
-	}
 }
 
 func parseConfig(path string) {
