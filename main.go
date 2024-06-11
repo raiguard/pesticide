@@ -29,7 +29,7 @@ func main() {
 	breakpoints = make(map[string][]dap.SourceBreakpoint)
 
 	// TODO: Handle vscode-style launch.json?
-	parseConfig(".pesticide")
+	parseConfig("pesticide.json")
 
 	ui = initUi()
 

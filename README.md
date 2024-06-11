@@ -15,7 +15,7 @@ sudo make install
 
 ## Usage / configuration
 
-Place a `.pesticide` file in your project directory and specify your adapter configurations. The file is JSON formatted:
+Place a `pesticide.json` file in your project directory and specify your adapter configurations. The file is JSON formatted:
 
 ```json
 {
