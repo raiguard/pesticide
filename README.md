@@ -1,12 +1,6 @@
 # Pesticide
 
-A terminal front-end for the [Debug Adapter
-Protocol](https://microsoft.github.io/debug-adapter-protocol/).
-
-## Status
-
-The project is progressing alarmingly quickly. Go is agreeing with me much more
-than Rust ever did, and the project is coming together at a frightening pace.
+A terminal front-end for the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
 
 ## Build
 
@@ -21,8 +15,7 @@ sudo make install
 
 ## Usage / configuration
 
-Place a `.pesticide` file in your project directory and specify your adapter
-configurations. The file is JSON formatted:
+Place a `.pesticide` file in your project directory and specify your adapter configurations. The file is JSON formatted:
 
 ```json
 {
@@ -46,8 +39,7 @@ configurations. The file is JSON formatted:
 - `addr`: An IP address to connect to. This can be used in combination with `cmd`.
 - `args`: Any adapter-specific arguments.
 
-Launch the `pest` executable in your project directory and it will source
-the configuration file. You can now run commands.
+Launch the `pest` executable in your project directory and it will source the configuration file. You can now run commands.
 
 ### Current commands
 

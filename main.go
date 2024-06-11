@@ -1,28 +1,12 @@
-// PROGRAM ARCHITECTURE:
-//
-// Goroutines:
-// - Controller (main)
-// - UI input
-// - Each adapter:
-//   - Receive DAP messages
-//   - Send DAP messages
-//
-// Lifetime:
-// - Init logging
-// - Read configuration file
-// -
-
 package main
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"sync"
 
-	"github.com/adrg/xdg"
 	"github.com/google/go-dap"
 )
 
@@ -34,22 +18,10 @@ var (
 	wg          sync.WaitGroup
 )
 
-func abort(message error) {
-	if message != nil {
-		fmt.Println(message)
-	}
-	os.Exit(1)
-}
-
 func main() {
-	// Logging
-	logPath, err := xdg.StateFile("pesticide.log")
+	file, err := os.OpenFile("/tmp/pesticide.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
 	if err != nil {
-		abort(err)
-	}
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
-	if err != nil {
-		abort(err)
+		panic(err)
 	}
 	log.SetOutput(file)
 
@@ -71,18 +43,18 @@ func main() {
 func parseConfig(path string) {
 	file, err := os.ReadFile(path)
 	if err != nil {
-		abort(err)
+		panic(err)
 	}
 	if err = json.Unmarshal(file, &config); err != nil {
-		abort(err)
+		panic(err)
 	}
 
 	if len(config.Adapters) == 0 {
-		abort(errors.New("No adapters were specified"))
+		panic(errors.New("No adapters were specified"))
 	}
 	for name, adapter := range config.Adapters {
 		if adapter.Addr == nil && adapter.Cmd == nil {
-			abort(errors.New("Adapters must have an address or command to run"))
+			panic(errors.New("Adapters must have an address or command to run"))
 		}
 		if adapter.Cmd != nil {
 			expanded := os.ExpandEnv(*adapter.Cmd)
