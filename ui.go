@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/wader/readline"
+	"github.com/ergochat/readline"
 )
 
 type UI struct {
@@ -60,7 +60,6 @@ eventLoop:
 		}
 	}
 	close(ui.events)
-	ui.rl.Clean()
 	ui.rl.Close()
 	wg.Done()
 }
