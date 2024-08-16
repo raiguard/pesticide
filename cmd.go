@@ -43,6 +43,10 @@ func cmdRead(input string) error {
 		handler = cmdParsePause
 	case "quit", "q":
 		handler = cmdParseQuit
+	case "up":
+		handler = cmdParseUp
+	case "down", "dow":
+		handler = cmdParseDown
 	default:
 		ui.printf("Unknown command: %s", args[0])
 		return nil
@@ -101,11 +105,14 @@ func cmdParseEvaluate(args []string) error {
 		return nil
 	}
 	adapter := adapters[*ui.focusedAdapter]
+	if adapter.focusedStackFrame == nil {
+		return nil
+	}
 	adapter.send(&dap.EvaluateRequest{
 		Request: adapter.newRequest("evaluate"),
 		Arguments: dap.EvaluateArguments{
 			Expression: strings.Join(args, " "),
-			FrameId:    adapter.focusedStackFrame,
+			FrameId:    adapter.focusedStackFrame.Id,
 			Context:    "watch",
 		},
 	})
@@ -155,5 +162,31 @@ func cmdParseQuit(args []string) error {
 	if ui != nil {
 		ui.send(uiEvent{uiShutdown, ""})
 	}
+	return nil
+}
+
+func cmdParseUp(args []string) error {
+	focused := ui.focusedAdapter
+	if focused == nil {
+		return errors.New(fmt.Sprint("No adapter is currently running"))
+	}
+	adapter := adapters[*focused]
+	if adapter == nil {
+		return errors.New("Selected adapter is nil for some reason")
+	}
+	adapter.travelStackFrame(1)
+	return nil
+}
+
+func cmdParseDown(args []string) error {
+	focused := ui.focusedAdapter
+	if focused == nil {
+		return errors.New(fmt.Sprint("No adapter is currently running"))
+	}
+	adapter := adapters[*focused]
+	if adapter == nil {
+		return errors.New("Selected adapter is nil for some reason")
+	}
+	adapter.travelStackFrame(-1)
 	return nil
 }

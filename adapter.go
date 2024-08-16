@@ -36,7 +36,7 @@ type adapter struct {
 	threads           []dap.Thread
 	stackframes       map[int][]dap.StackFrame
 	pendingRequests   map[int]dap.Message
-	focusedStackFrame int
+	focusedStackFrame *dap.StackFrame
 	focusedThread     int
 }
 
@@ -250,7 +250,7 @@ func (a *adapter) onOutputEvent(ev *dap.OutputEvent) {
 }
 
 func (a *adapter) onStoppedEvent(ev *dap.StoppedEvent) {
-	ui.print(a.id, " stopped: ", ev.Body.Reason)
+	ui.print(a.id, " stopped: ", ev.Body.Reason, ": ", ev.Body.Text)
 	a.focusedThread = ev.Body.ThreadId
 	a.send(&dap.StackTraceRequest{
 		Request:   a.newRequest("stackTrace"),
@@ -300,9 +300,35 @@ func (a *adapter) sendSetBreakpointsRequest() {
 
 func (a *adapter) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
 	a.stackframes[ctx.Arguments.ThreadId] = res.Body.StackFrames
-	a.focusedStackFrame = res.Body.StackFrames[0].Id
+	a.focusedStackFrame = &a.stackframes[ctx.Arguments.ThreadId][0]
 }
 
 func (a *adapter) onEvaluateResponse(res *dap.EvaluateResponse) {
 	ui.print(res.Body.Result)
+}
+
+func (a *adapter) travelStackFrame(delta int) {
+	if a.focusedStackFrame == nil {
+		ui.print("no stack frame is selected")
+		return
+	}
+
+	stackFrames := a.stackframes[a.focusedThread]
+	toFocus := -1
+	for i, frame := range stackFrames {
+		if frame.Id == a.focusedStackFrame.Id {
+			toFocus = i + delta
+			break
+		}
+	}
+	if toFocus <= 0 {
+		ui.print("failed to find selected stack frame")
+		toFocus = 0
+	}
+	if toFocus <= 0 {
+		toFocus = 0
+	} else if len(stackFrames)-1 < toFocus {
+		toFocus = len(stackFrames) - 1
+	}
+	a.focusedStackFrame = &stackFrames[toFocus]
 }

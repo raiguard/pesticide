@@ -49,3 +49,5 @@ Launch the `pest` executable in your project directory and it will source the co
 - `launch <adapter name>`
 - `pause`
 - `quit`
+- `up`
+- `down`
