@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -321,14 +322,19 @@ func (a *adapter) travelStackFrame(delta int) {
 			break
 		}
 	}
-	if toFocus <= 0 {
-		ui.print("failed to find selected stack frame")
-		toFocus = 0
-	}
-	if toFocus <= 0 {
+	if toFocus < 0 {
 		toFocus = 0
 	} else if len(stackFrames)-1 < toFocus {
 		toFocus = len(stackFrames) - 1
 	}
 	a.focusedStackFrame = &stackFrames[toFocus]
+	a.jumpInKak()
+}
+
+func (a *adapter) jumpInKak() {
+	cmd := exec.Command("kak", "-p", "factorio")
+	buffer := bytes.Buffer{}
+	buffer.Write([]byte(fmt.Sprintf("evaluate-commands -client %%opt{jumpclient} %%{edit %s %d}", a.focusedStackFrame.Source.Path, a.focusedStackFrame.Line)))
+	cmd.Stdin = &buffer
+	cmd.Run()
 }
