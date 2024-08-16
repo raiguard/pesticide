@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/google/go-dap"
-	"github.com/google/shlex"
 )
 
 type adapterConfig struct {
@@ -22,10 +21,7 @@ type adapterConfig struct {
 // executes UI or adapter commands.
 
 func cmdRead(input string) error {
-	args, err := shlex.Split(input)
-	if err != nil {
-		return err
-	}
+	args := strings.Split(input, " ")
 	if len(args) == 0 {
 		return nil
 	}

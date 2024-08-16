@@ -302,6 +302,7 @@ func (a *adapter) sendSetBreakpointsRequest() {
 func (a *adapter) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
 	a.stackframes[ctx.Arguments.ThreadId] = res.Body.StackFrames
 	a.focusedStackFrame = &a.stackframes[ctx.Arguments.ThreadId][0]
+	a.jumpInKak()
 }
 
 func (a *adapter) onEvaluateResponse(res *dap.EvaluateResponse) {
@@ -332,9 +333,12 @@ func (a *adapter) travelStackFrame(delta int) {
 }
 
 func (a *adapter) jumpInKak() {
-	cmd := exec.Command("kak", "-p", "factorio")
+	cmd := exec.Command("kak", "-p", "Krastorio2")
 	buffer := bytes.Buffer{}
-	buffer.Write([]byte(fmt.Sprintf("evaluate-commands -client %%opt{jumpclient} %%{edit %s %d}", a.focusedStackFrame.Source.Path, a.focusedStackFrame.Line)))
+	if a.focusedStackFrame.Source.Path == "" {
+		return
+	}
+	buffer.WriteString(fmt.Sprintf("evaluate-commands -client %%opt{jumpclient} %%{edit %s %d}", a.focusedStackFrame.Source.Path, a.focusedStackFrame.Line))
 	cmd.Stdin = &buffer
 	cmd.Run()
 }
