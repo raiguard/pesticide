@@ -2,31 +2,23 @@ PREFIX = $(DESTDIR)/usr/local
 BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man
 
-all: pest docs
+all: pesticide
 
-pest: *.go
-	go build -o pest
-
-docs: pest.1
-
-pest.1: pest.1.scd
-	scdoc < $< > $@
+pesticide: *.go
+	go build -o pesticide
 
 install:
 	install -d \
 		$(BINDIR) \
 		$(MANDIR)/man1/
-	install -pm 0755 pest $(BINDIR)/
-	install -pm 0644 pest.1 $(MANDIR)/man1/
+	install -pm 0755 pesticide $(BINDIR)/
 
 uninstall:
 	rm -f \
-		$(BINDIR)/pest \
-		$(MANDIR)/man1/pest.1
+		$(BINDIR)/pesticide
 
 clean:
 	go clean
-	rm -f pest
-	rm -f pest.1
+	rm -f pesticide
 
-.PHONY: docs install uninstall clean
+.PHONY: install uninstall clean
