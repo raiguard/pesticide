@@ -5,12 +5,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/raiguard/pesticide/config"
+	"github.com/raiguard/pesticide/ui"
 )
 
 type model struct {
+	commandHistory ui.CommandHistory
 	config         config.Config
-	commandHistory []string
-	historyIndex   int
 
 	textinput textinput.Model
 }
@@ -32,32 +32,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlD:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			m.commandHistory = append(m.commandHistory, m.textinput.Value())
+			m.commandHistory.Append(m.textinput.Value())
+			cmds = append(cmds, tea.Println("(pesticide) ", m.textinput.Value()))
 			m.textinput.SetValue("")
-			m.historyIndex = -1
-			cmds = append(cmds, tea.Println("(pesticide) ", m.commandHistory[len(m.commandHistory)-1]))
 		case tea.KeyUp:
-			if m.historyIndex == -1 {
-				m.historyIndex = len(m.commandHistory) - 1
-			} else {
-				m.historyIndex--
-				if m.historyIndex < 0 {
-					m.historyIndex = 0
-				}
-			}
-			if m.historyIndex > -1 {
-				m.textinput.SetValue(m.commandHistory[m.historyIndex])
-				m.textinput.SetCursor(999)
-			}
+			m.commandHistory.Up()
+			m.textinput.SetValue(m.commandHistory.Get())
+			m.textinput.SetCursor(999)
 		case tea.KeyDown:
-			if m.historyIndex < len(m.commandHistory) {
-				m.historyIndex++
-			}
-			if m.historyIndex == len(m.commandHistory) {
-				m.textinput.SetValue("")
-			} else {
-				m.textinput.SetValue(m.commandHistory[m.historyIndex])
-			}
+			m.commandHistory.Down()
+			m.textinput.SetValue(m.commandHistory.Get())
 			m.textinput.SetCursor(999)
 		}
 	}
@@ -73,9 +57,8 @@ func (m *model) View() string {
 
 func main() {
 	p := tea.NewProgram(&model{
+		commandHistory: ui.NewCommandHistory(),
 		config:         config.New("pesticide.json"),
-		commandHistory: []string{},
-		historyIndex:   -1,
 		textinput:      textinput.Model{},
 	})
 	if _, err := p.Run(); err != nil {
