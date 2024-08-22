@@ -11,9 +11,15 @@ require (
 )
 
 require (
+	github.com/go-logfmt/logfmt v0.6.0 // indirect
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
+)
+
+require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/charmbracelet/lipgloss v0.9.1 // indirect
+	github.com/charmbracelet/lipgloss v0.10.0 // indirect
+	github.com/charmbracelet/log v0.4.0
 	github.com/charmbracelet/x/ansi v0.1.4 // indirect
 	github.com/charmbracelet/x/input v0.1.0 // indirect
 	github.com/charmbracelet/x/term v0.1.1 // indirect

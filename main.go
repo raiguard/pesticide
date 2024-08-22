@@ -1,9 +1,12 @@
 package main
 
 import (
+	"log"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/raiguard/pesticide/command"
 	"github.com/raiguard/pesticide/config"
 	"github.com/raiguard/pesticide/ui"
 )
@@ -19,7 +22,7 @@ func (m *model) Init() tea.Cmd {
 	m.textinput = textinput.New()
 	m.textinput.Prompt = "(pesticide) "
 	m.textinput.Focus()
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, tea.Println("Type a command and press <ret> to submit, or press <ctrl-d> to exit"))
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -32,9 +35,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlD:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			m.commandHistory.Append(m.textinput.Value())
-			cmds = append(cmds, tea.Println("(pesticide) ", m.textinput.Value()))
+			input := m.textinput.Value()
 			m.textinput.SetValue("")
+			m.commandHistory.Append(input)
+			cmds = append(cmds, tea.Println("(pesticide) ", input))
+			cmd, err := command.Parse(input)
+			if err != nil {
+				cmds = append(cmds, tea.Println(err))
+				break
+			}
+			cmds = append(cmds, tea.Printf("Command: %s", cmd.Type))
+			// TODO: Parse command to do DAP stuffs!
 		case tea.KeyUp:
 			m.commandHistory.Up()
 			m.textinput.SetValue(m.commandHistory.Get())
@@ -47,8 +58,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)
-	cmds = append(cmds, cmd)
-	return m, tea.Batch(cmds...)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	log.Printf("%+v", cmds)
+	return m, tea.Sequence(cmds...)
 }
 
 func (m *model) View() string {
@@ -56,6 +70,11 @@ func (m *model) View() string {
 }
 
 func main() {
+	f, err := tea.LogToFile("/tmp/pesticide.log", "tea")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
 	p := tea.NewProgram(&model{
 		commandHistory: ui.NewCommandHistory(),
 		config:         config.New("pesticide.json"),
