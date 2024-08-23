@@ -2,16 +2,15 @@
 
 A terminal front-end for the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
 
-## Build
+## Installation
 
-Dependencies:
-- [go](https://golang.org)
-- [scdoc](https://git.sr.ht/~sircmpwn/scdoc) (for man pages)
+Install [Go](https://golang.org) and run
 
 ```
-make
-sudo make install
+go install github.com/raiguard/pesticide
 ```
+
+This will install the `pesticide` executable into your `go/bin` directory.
 
 ## Usage / configuration
 
@@ -39,15 +38,10 @@ Place a `pesticide.json` file in your project directory and specify your adapter
 - `addr`: An IP address to connect to. This can be used in combination with `cmd`.
 - `args`: Any adapter-specific arguments.
 
-Launch the `pest` executable in your project directory and it will source the configuration file. You can now run commands.
+Launch the `pesticide` executable and it will source the configuration file. You can now run commands.
 
 ### Current commands
 
-- `break <filename> <line>`
-- `continue`
-- `evaluate <expression>`
+**NOTE:** A heavy rewrite is underway. This list represents all currently functioning commands at the time of writing.
+
 - `launch <adapter name>`
-- `pause`
-- `quit`
-- `up`
-- `down`
