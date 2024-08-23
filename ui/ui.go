@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"log"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/raiguard/pesticide/command"
@@ -73,7 +71,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
-	log.Printf("%+v", cmds)
 
 	// Bubbletea does not validate sequence commands, so we must do it ourselves to avoid high CPU usage.
 	var validCmds []tea.Cmd //nolint:prealloc
