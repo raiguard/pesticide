@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"log"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/raiguard/pesticide/command"
@@ -9,13 +11,13 @@ import (
 
 type Model struct {
 	config   config.Config // TODO: Is this needed in the UI?
-	outgoing chan tea.Msg
+	outgoing chan command.Command
 
 	commandHistory CommandHistory
 	textinput      textinput.Model
 }
 
-func New(config config.Config, outgoing chan tea.Msg) *tea.Program {
+func New(config config.Config, outgoing chan command.Command) *tea.Program {
 	return tea.NewProgram(&Model{
 		config:         config,
 		outgoing:       outgoing,
@@ -53,9 +55,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, tea.Println(err))
 				break
 			}
-			cmds = append(cmds, tea.Printf("Command: %s", cmd.Type))
+			log.Printf("Command: %+v", cmd)
 			m.outgoing <- cmd
-			// TODO: Parse command to do DAP stuffs!
 		case tea.KeyUp:
 			m.commandHistory.Up()
 			m.textinput.SetValue(m.commandHistory.Get())

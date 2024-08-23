@@ -1,10 +1,10 @@
 {
   "adapters": {
     "fmtk": {
-      "cmd": "fmtk debug /home/rai/dev/factorio/1.1/bin/x64/factorio",
+      "cmd": "fmtk debug /home/rai/games/factorio/bin/x64/factorio",
       "args": {
-        "hookControl": [ "UltimateResearchQueue" ],
-        "modsPath": "/home/rai/dev/factorio/1.1/mods"
+        "hookControl": true,
+        "modsPath": "/home/rai/games/factorio/mods"
       }
     },
     "mock": {

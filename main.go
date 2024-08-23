@@ -16,7 +16,7 @@ func main() {
 		panic(err)
 	}
 	defer f.Close()
-	fromUI := make(chan tea.Msg)
+	fromUI := make(chan command.Command)
 	config := config.New("pesticide.json")
 	p := ui.New(config, fromUI)
 	go func() {
@@ -25,41 +25,38 @@ func main() {
 		}
 	}()
 	adapters := map[string]*adapter.Adapter{}
-msgLoop:
-	for msg := range fromUI {
-		switch msg := msg.(type) {
-		case command.Command:
-			switch msg.Type {
-			case command.CommandLaunch:
-				adapterConfig, ok := config.Adapters[msg.Data]
-				if !ok {
-					p.Printf("Unknown debug adapter %s", msg.Data)
-					continue msgLoop
-				}
-				a, err := adapter.New(adapterConfig)
-				if err != nil {
-					p.Println(err)
-					continue msgLoop
-				}
-				adapters[msg.Data] = a
-				a.Send(&dap.InitializeRequest{
-					Request: a.NewRequest("initialize"),
-					Arguments: dap.InitializeRequestArguments{
-						ClientID:        "pesticide",
-						ClientName:      "Pesticide",
-						Locale:          "en-US",
-						PathFormat:      "path",
-						LinesStartAt1:   true,
-						ColumnsStartAt1: true,
-					},
-				})
-				p.Println("Sent initialization request")
+cmdLoop:
+	for cmd := range fromUI {
+		switch cmd := cmd.(type) {
+		case command.Launch:
+			adapterConfig, ok := config.Adapters[cmd.Name]
+			if !ok {
+				p.Printf("Unknown debug adapter %s", cmd.Name)
+				continue cmdLoop
 			}
+			a, err := adapter.New(adapterConfig)
+			if err != nil {
+				p.Println(err)
+				continue cmdLoop
+			}
+			adapters[cmd.Name] = a
+			a.Send(&dap.InitializeRequest{
+				Request: a.NewRequest("initialize"),
+				Arguments: dap.InitializeRequestArguments{
+					ClientID:        "pesticide",
+					ClientName:      "Pesticide",
+					Locale:          "en-US",
+					PathFormat:      "path",
+					LinesStartAt1:   true,
+					ColumnsStartAt1: true,
+				},
+			})
+			p.Println("Sent initialization request")
 		}
 	}
-	p.Quit()
-	p.Wait()
 	for _, adapter := range adapters {
 		adapter.Shutdown()
 	}
+	p.Quit()
+	p.Wait()
 }

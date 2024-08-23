@@ -125,6 +125,7 @@ func (a *Adapter) Shutdown() {
 		cmd.Process.Kill()
 	}
 	log.Printf("[%s] EXITED\n", a.id)
+	// TODO: Remove from controller adapters list
 }
 
 func (a *Adapter) Send(msg dap.Message) {
