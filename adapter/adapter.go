@@ -159,6 +159,7 @@ func (a *Adapter) receive() {
 		if seq > a.seq {
 			a.seq = seq
 		}
+		a.handleMessage(msg)
 	}
 }
 

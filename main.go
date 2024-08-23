@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	f, err := tea.LogToFile("/tmp/pesticide.log", "tea")
+	f, err := tea.LogToFile("/tmp/pesticide.log", "")
 	if err != nil {
 		panic(err)
 	}
