@@ -10,11 +10,15 @@ type Command interface {
 	command()
 }
 
+type Continue struct{}
 type Launch struct {
 	Name string
 }
+type Pause struct{}
 
-func (l Launch) command() {}
+func (c Continue) command() {}
+func (l Launch) command()   {}
+func (p Pause) command()    {}
 
 func Parse(input string) (Command, error) {
 	args := strings.Split(input, " ")
@@ -24,14 +28,14 @@ func Parse(input string) (Command, error) {
 	switch args[0] {
 	// case "break", "b":
 	// 	handler = cmdParseBreak
-	// case "continue", "c":
-	// 	handler = cmdParseContinue
+	case "continue", "c":
+		return Continue{}, nil
 	// case "evaluate", "eval", "e":
 	// 	handler = cmdParseEvaluate
 	case "launch", "l":
 		return cmdParseLaunch(args[1:])
-	// case "pause", "p":
-	// 	handler = cmdParsePause
+	case "pause", "p":
+		return Pause{}, nil
 	// case "quit", "q":
 	// 	handler = cmdParseQuit
 	// case "up":

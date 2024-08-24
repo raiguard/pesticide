@@ -129,6 +129,7 @@ func (a *Adapter) Shutdown() {
 }
 
 func (a *Adapter) Send(msg dap.Message) {
+	a.pendingRequests[msg.GetSeq()] = msg
 	a.sendQueue <- msg
 }
 

@@ -25,6 +25,7 @@ func main() {
 		}
 	}()
 	adapters := map[string]*adapter.Adapter{}
+	var focusedAdapter *adapter.Adapter
 cmdLoop:
 	for cmd := range fromUI {
 		switch cmd := cmd.(type) {
@@ -40,6 +41,7 @@ cmdLoop:
 				continue cmdLoop
 			}
 			adapters[cmd.Name] = a
+			focusedAdapter = a
 			a.Send(&dap.InitializeRequest{
 				Request: a.NewRequest("initialize"),
 				Arguments: dap.InitializeRequestArguments{
@@ -52,6 +54,14 @@ cmdLoop:
 				},
 			})
 			p.Println("Sent initialization request")
+		case command.Pause:
+			focusedAdapter.Send(&dap.PauseRequest{
+				Request: focusedAdapter.NewRequest("pause"),
+			})
+		case command.Continue:
+			focusedAdapter.Send(&dap.ContinueRequest{
+				Request: focusedAdapter.NewRequest("continue"),
+			})
 		}
 	}
 	for _, adapter := range adapters {
