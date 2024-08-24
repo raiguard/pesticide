@@ -1,6 +1,6 @@
 # Pesticide
 
-A terminal front-end for the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
+A command-line UI for the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
 
 ## Installation
 
@@ -45,3 +45,6 @@ Launch the `pesticide` executable and it will source the configuration file. You
 **NOTE:** A heavy rewrite is underway. This list represents all currently functioning commands at the time of writing.
 
 - `launch <adapter name>`
+- `pause`
+- `continue`
+- `quit`

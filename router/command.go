@@ -11,16 +11,30 @@ import (
 
 func (r *Router) handleCommand(cmd command.Command) error {
 	switch cmd := cmd.(type) {
+	case command.Continue:
+		r.focusedAdapter.Send(&dap.ContinueRequest{
+			Request: r.focusedAdapter.NewRequest("continue"),
+		})
 	case command.Launch:
 		return r.handleLaunchCommand(cmd)
 	case command.Pause:
 		r.focusedAdapter.Send(&dap.PauseRequest{
 			Request: r.focusedAdapter.NewRequest("pause"),
 		})
-	case command.Continue:
-		r.focusedAdapter.Send(&dap.ContinueRequest{
-			Request: r.focusedAdapter.NewRequest("continue"),
-		})
+	case command.Quit:
+		// TODO: Store whether terminate has been sent and send disconnect in that case
+		if r.focusedAdapter.Capabilities.SupportsTerminateRequest {
+			r.focusedAdapter.Send(&dap.TerminateRequest{
+				Request: r.focusedAdapter.NewRequest("terminate"),
+			})
+		} else {
+			r.focusedAdapter.Send(&dap.DisconnectRequest{
+				Request: r.focusedAdapter.NewRequest("disconnect"),
+				Arguments: dap.DisconnectArguments{
+					TerminateDebuggee: true,
+				},
+			})
+		}
 	}
 	return nil
 }

@@ -15,10 +15,12 @@ type Launch struct {
 	Name string
 }
 type Pause struct{}
+type Quit struct{}
 
 func (c Continue) command() {}
 func (l Launch) command()   {}
 func (p Pause) command()    {}
+func (q Quit) command()     {}
 
 func Parse(input string) (Command, error) {
 	args := strings.Split(input, " ")
@@ -36,8 +38,8 @@ func Parse(input string) (Command, error) {
 		return cmdParseLaunch(args[1:])
 	case "pause", "p":
 		return Pause{}, nil
-	// case "quit", "q":
-	// 	handler = cmdParseQuit
+	case "quit", "q":
+		return Quit{}, nil
 	// case "up":
 	// 	handler = cmdParseUp
 	// case "down", "dow":
