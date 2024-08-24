@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -11,13 +10,13 @@ import (
 )
 
 func (r *Router) handleDAPMessage(msg message.DapMsg) error {
-	if _, ok := msg.Msg.(*dap.OutputEvent); !ok {
-		val, err := json.Marshal(msg)
-		if err != nil {
-			return err
-		}
-		r.printf("Received DAP message: %s", string(val))
-	}
+	// if _, ok := msg.Msg.(*dap.OutputEvent); !ok {
+	// 	val, err := json.Marshal(msg)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	r.printf("Received DAP message: %s", string(val))
+	// }
 
 	a, ok := r.adapters[msg.Adapter]
 	if !ok {

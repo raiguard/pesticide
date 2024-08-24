@@ -152,7 +152,11 @@ func (a *Adapter) sendFromQueue() {
 			log.Println("Unable to send message to adapter: ", err)
 			continue
 		}
-		log.Printf("[%s] <- %#v", a.ID, msg)
+		val, err := json.Marshal(msg)
+		if err != nil {
+			panic(err)
+		}
+		log.Printf("[%s] <- %s", a.ID, string(val))
 		a.rw.Writer.Flush()
 	}
 }
@@ -163,11 +167,11 @@ func (a *Adapter) receive() {
 		if err != nil {
 			break
 		}
-		switch msg.(type) {
-		case *dap.OutputEvent:
-		default:
-			log.Printf("[%s] -> %#v", a.ID, msg)
+		val, err := json.Marshal(msg)
+		if err != nil {
+			panic(err)
 		}
+		log.Printf("[%s] -> %s", a.ID, string(val))
 		// Increment seq
 		seq := msg.GetSeq()
 		if seq > a.seq {
