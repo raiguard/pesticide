@@ -12,12 +12,18 @@ import (
 func (r *Router) handleCommand(cmd command.Command) error {
 	switch cmd := cmd.(type) {
 	case command.Continue:
+		if r.focusedAdapter == nil {
+			return errors.New("No adapter in focus")
+		}
 		r.focusedAdapter.Send(&dap.ContinueRequest{
 			Request: r.focusedAdapter.NewRequest("continue"),
 		})
 	case command.Launch:
 		return r.handleLaunchCommand(cmd)
 	case command.Pause:
+		if r.focusedAdapter == nil {
+			return errors.New("No adapter in focus")
+		}
 		r.focusedAdapter.Send(&dap.PauseRequest{
 			Request: r.focusedAdapter.NewRequest("pause"),
 		})
