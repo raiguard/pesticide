@@ -42,14 +42,15 @@ func (r *Router) handleDAPMessage(msg message.DapMsg) error {
 		}
 	case dap.EventMessage:
 		switch msg := msg.(type) {
-		// case *dap.InitializedEvent:
-		// 	return r.onInitializedEvent(msg)
-		// case *dap.TerminatedEvent:
-		// 	return r.Shutdown()
+		case *dap.InitializedEvent:
+			return r.onInitializedEvent(a, msg)
+		case *dap.TerminatedEvent:
+			a.Shutdown()
+			delete(r.adapters, a.ID)
 		case *dap.StoppedEvent:
 			return r.onStoppedEvent(a, msg)
 		case *dap.OutputEvent:
-			r.println(strings.TrimSpace(msg.Body.Output))
+			return r.onOutputEvent(a, msg)
 		}
 	}
 	return nil
@@ -61,9 +62,10 @@ func (r *Router) onInitializeResponse(a *adapter.Adapter, res *dap.InitializeRes
 	return nil
 }
 
-// func (r *Router) onOutputEvent(ev *dap.OutputEvent) {
-// 	// ui.print(strings.TrimSpace(ev.Body.Output))
-// }
+func (r *Router) onOutputEvent(a *adapter.Adapter, ev *dap.OutputEvent) error {
+	r.println(strings.TrimSpace(ev.Body.Output))
+	return nil
+}
 
 func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) error {
 	r.println(a.ID, " stopped: ", event.Body.Reason, ": ", event.Body.Text)
@@ -90,15 +92,16 @@ func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) err
 // 	})
 // }
 
-// func (r *Router) onInitializedEvent(ev *dap.InitializedEvent) {
-// 	r.sendSetBreakpointsRequest()
-// 	if r.Capabilities.SupportsConfigurationDoneRequest {
-// 		r.Send(&dap.ConfigurationDoneRequest{
-// 			Request:   r.NewRequest("configurationDone"),
-// 			Arguments: dap.ConfigurationDoneArguments{},
-// 		})
-// 	}
-// }
+func (r *Router) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent) error {
+	// r.sendSetBreakpointsRequest()
+	if a.Capabilities.SupportsConfigurationDoneRequest {
+		a.Send(&dap.ConfigurationDoneRequest{
+			Request:   a.NewRequest("configurationDone"),
+			Arguments: dap.ConfigurationDoneArguments{},
+		})
+	}
+	return nil
+}
 
 // func (r *Router) sendSetBreakpointsRequest() {
 // 	// for filename, breakpoints := range breakpoints {
