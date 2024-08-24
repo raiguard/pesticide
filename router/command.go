@@ -39,6 +39,7 @@ func (r *Router) handleCommand(cmd command.Command) error {
 					TerminateDebuggee: true,
 				},
 			})
+			// TODO: Force-remove the adapter from the adapters list
 		}
 	}
 	return nil
