@@ -40,8 +40,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			m.textinput.SetValue("")
 		case tea.KeyEnter:
-			cmds = append(cmds, tea.Println(m.textinput.View()))
 			input := m.textinput.Value()
+			cmds = append(cmds, tea.Println(m.textinput.Prompt, input))
 			m.textinput.SetValue("")
 			m.commandHistory.Append(input)
 			cmd, err := command.Parse(input)
