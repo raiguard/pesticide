@@ -2,11 +2,10 @@ package main
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/go-dap"
 
-	"github.com/raiguard/pesticide/adapter"
-	"github.com/raiguard/pesticide/command"
 	"github.com/raiguard/pesticide/config"
+	"github.com/raiguard/pesticide/message"
+	"github.com/raiguard/pesticide/router"
 	"github.com/raiguard/pesticide/ui"
 )
 
@@ -16,60 +15,19 @@ func main() {
 		panic(err)
 	}
 	defer f.Close()
-	fromUI := make(chan command.Command)
+	input := make(chan message.Message)
+	output := make(chan message.Message)
 	config := config.New("pesticide.json")
-	p := ui.New(config, fromUI)
+	p := ui.New(config, input)
 	go func() {
 		if _, err := p.Run(); err != nil {
 			panic(err)
 		}
 	}()
-	adapters := map[string]*adapter.Adapter{}
-	var focusedAdapter *adapter.Adapter
-cmdLoop:
-	for cmd := range fromUI {
-		switch cmd := cmd.(type) {
-		case command.Launch:
-			adapterConfig, ok := config.Adapters[cmd.Name]
-			if !ok {
-				p.Send(ui.Printf("Unknown debug adapter %s", cmd.Name))
-				continue cmdLoop
-			}
-			if _, ok := adapters[cmd.Name]; ok {
-				p.Send(ui.Printf("Adapter %s is already running", cmd.Name))
-				continue cmdLoop
-			}
-			a, err := adapter.New(adapterConfig)
-			if err != nil {
-				p.Send(ui.Printf("%s", err))
-				continue cmdLoop
-			}
-			adapters[cmd.Name] = a
-			focusedAdapter = a
-			a.Send(&dap.InitializeRequest{
-				Request: a.NewRequest("initialize"),
-				Arguments: dap.InitializeRequestArguments{
-					ClientID:        "pesticide",
-					ClientName:      "Pesticide",
-					Locale:          "en-US",
-					PathFormat:      "path",
-					LinesStartAt1:   true,
-					ColumnsStartAt1: true,
-				},
-			})
-			p.Send(ui.Printf("Sent initialization request"))
-		case command.Pause:
-			focusedAdapter.Send(&dap.PauseRequest{
-				Request: focusedAdapter.NewRequest("pause"),
-			})
-		case command.Continue:
-			focusedAdapter.Send(&dap.ContinueRequest{
-				Request: focusedAdapter.NewRequest("continue"),
-			})
-		}
-	}
-	for _, adapter := range adapters {
-		adapter.Shutdown()
+	router := router.New(input, output, config)
+	go router.Run()
+	for msg := range output {
+		p.Send(msg)
 	}
 	p.Quit()
 	p.Wait()

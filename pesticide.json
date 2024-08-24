@@ -1,10 +1,10 @@
 {
   "adapters": {
     "fmtk": {
-      "cmd": "fmtk debug /home/rai/games/factorio/bin/x64/factorio",
+      "cmd": "fmtk debug --docs ../../../scripts/lua_doc/doc-files/runtime-api.json /home/rai/dev/wube/factorio/bin/fetched/factorio",
       "args": {
         "hookControl": true,
-        "modsPath": "/home/rai/games/factorio/mods"
+        "modsPath": "/home/rai/dev/wube/factorio/mods"
       }
     },
     "mock": {

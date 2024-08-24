@@ -5,7 +5,6 @@ go 1.21
 require (
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.27.0
-	github.com/ergochat/readline v0.1.1
 	github.com/google/go-dap v0.8.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 )

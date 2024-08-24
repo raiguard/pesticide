@@ -5,31 +5,24 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/raiguard/pesticide/command"
 	"github.com/raiguard/pesticide/config"
+	"github.com/raiguard/pesticide/message"
 )
 
 type Model struct {
-	config   config.Config // TODO: Is this needed in the UI?
-	outgoing chan command.Command
+	config config.Config // TODO: Is this needed in the UI?
+	output chan message.Message
 
 	commandHistory CommandHistory
 	textinput      textinput.Model
 }
 
-type PrintfMsg struct {
-	Fmt  string
-	Args []any
-}
-
-func Printf(fmt string, args ...any) PrintfMsg {
-	return PrintfMsg{fmt, args}
-}
-
-func New(config config.Config, outgoing chan command.Command) *tea.Program {
+func New(config config.Config, output chan message.Message) *tea.Program {
 	return tea.NewProgram(&Model{
 		config:         config,
-		outgoing:       outgoing,
+		output:         output,
 		commandHistory: CommandHistory{},
 		textinput:      textinput.Model{},
 	})
@@ -37,7 +30,7 @@ func New(config config.Config, outgoing chan command.Command) *tea.Program {
 
 func (m *Model) Init() tea.Cmd {
 	m.textinput = textinput.New()
-	m.textinput.Prompt = "(pesticide) "
+	m.textinput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render("(pesticide) ")
 	m.textinput.Focus()
 	return tea.Batch(textinput.Blink, tea.Println("Type a command and press <ret> to submit, or press <ctrl-d> to exit"))
 }
@@ -52,20 +45,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlD:
 			// Closing the outgoing channel will cause the main thread to shut down the UI and clean up.
 			// TODO: Send "quit" pesticide command to shut down adapters etc.
-			close(m.outgoing)
+			close(m.output)
 			return m, nil
 		case tea.KeyEnter:
+			cmds = append(cmds, tea.Println(m.textinput.View()))
 			input := m.textinput.Value()
 			m.textinput.SetValue("")
 			m.commandHistory.Append(input)
-			cmds = append(cmds, tea.Println("(pesticide) ", input))
 			cmd, err := command.Parse(input)
 			if err != nil {
 				cmds = append(cmds, tea.Println(err))
 				break
 			}
 			log.Printf("Command: %+v", cmd)
-			m.outgoing <- cmd
+			m.output <- message.Command{Cmd: cmd}
 		case tea.KeyUp:
 			m.commandHistory.Up()
 			m.textinput.SetValue(m.commandHistory.Get())
@@ -75,8 +68,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textinput.SetValue(m.commandHistory.Get())
 			m.textinput.SetCursor(999)
 		}
-	case PrintfMsg:
-		cmds = append(cmds, tea.Printf(msg.Fmt, msg.Args...))
+	case message.Print:
+		cmds = append(cmds, tea.Println(msg.Obj...))
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)
