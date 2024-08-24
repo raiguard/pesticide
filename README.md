@@ -1,6 +1,6 @@
 # Pesticide
 
-A command-line UI for the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
+A command-line UI for debuggers based on the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
 
 ## Installation
 

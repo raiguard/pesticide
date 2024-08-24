@@ -7,21 +7,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/raiguard/pesticide/command"
-	"github.com/raiguard/pesticide/config"
 	"github.com/raiguard/pesticide/message"
 )
 
 type Model struct {
-	config config.Config // TODO: Is this needed in the UI?
 	output chan message.Message
 
 	commandHistory CommandHistory
 	textinput      textinput.Model
 }
 
-func New(config config.Config, output chan message.Message) *tea.Program {
+func New(output chan message.Message) *tea.Program {
 	return tea.NewProgram(&Model{
-		config:         config,
 		output:         output,
 		commandHistory: CommandHistory{},
 		textinput:      textinput.Model{},

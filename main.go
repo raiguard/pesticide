@@ -15,20 +15,20 @@ func main() {
 		panic(err)
 	}
 	defer f.Close()
-	input := make(chan message.Message)
-	output := make(chan message.Message)
-	config := config.New("pesticide.json")
-	p := ui.New(config, input)
-	go func() {
-		if _, err := p.Run(); err != nil {
-			panic(err)
-		}
-	}()
-	router := router.New(input, output, config)
+
+	fromUI := make(chan message.Message)
+	fromRouter := make(chan message.Message)
+
+	ui := ui.New(fromUI)
+	go ui.Run()
+
+	router := router.New(fromUI, fromRouter, config.New("pesticide.json"))
 	go router.Run()
-	for msg := range output {
-		p.Send(msg)
+
+	for msg := range fromRouter {
+		ui.Send(msg)
 	}
-	p.Quit()
-	p.Wait()
+
+	ui.Quit()
+	ui.Wait()
 }
