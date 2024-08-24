@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/google/go-dap"
@@ -48,11 +47,6 @@ func New(config config.AdapterConfig, recvQueue chan message.Message) (*Adapter,
 			return nil, err
 		}
 		child := exec.Command(args[0], args[1:]...)
-		// Prevent propagation of signals
-		child.SysProcAttr = &syscall.SysProcAttr{
-			Setpgid: true,
-			Pgid:    0,
-		}
 		stdin, err := child.StdinPipe()
 		if err != nil {
 			return nil, err
