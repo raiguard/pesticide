@@ -32,12 +32,16 @@ cmdLoop:
 		case command.Launch:
 			adapterConfig, ok := config.Adapters[cmd.Name]
 			if !ok {
-				p.Printf("Unknown debug adapter %s", cmd.Name)
+				p.Send(ui.Printf("Unknown debug adapter %s", cmd.Name))
+				continue cmdLoop
+			}
+			if _, ok := adapters[cmd.Name]; ok {
+				p.Send(ui.Printf("Adapter %s is already running", cmd.Name))
 				continue cmdLoop
 			}
 			a, err := adapter.New(adapterConfig)
 			if err != nil {
-				p.Println(err)
+				p.Send(ui.Printf("%s", err))
 				continue cmdLoop
 			}
 			adapters[cmd.Name] = a
@@ -53,7 +57,7 @@ cmdLoop:
 					ColumnsStartAt1: true,
 				},
 			})
-			p.Println("Sent initialization request")
+			p.Send(ui.Printf("Sent initialization request"))
 		case command.Pause:
 			focusedAdapter.Send(&dap.PauseRequest{
 				Request: focusedAdapter.NewRequest("pause"),

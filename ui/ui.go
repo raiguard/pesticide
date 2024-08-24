@@ -17,6 +17,15 @@ type Model struct {
 	textinput      textinput.Model
 }
 
+type PrintfMsg struct {
+	Fmt  string
+	Args []any
+}
+
+func Printf(fmt string, args ...any) PrintfMsg {
+	return PrintfMsg{fmt, args}
+}
+
 func New(config config.Config, outgoing chan command.Command) *tea.Program {
 	return tea.NewProgram(&Model{
 		config:         config,
@@ -66,6 +75,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textinput.SetValue(m.commandHistory.Get())
 			m.textinput.SetCursor(999)
 		}
+	case PrintfMsg:
+		cmds = append(cmds, tea.Printf(msg.Fmt, msg.Args...))
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)
