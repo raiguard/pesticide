@@ -32,7 +32,7 @@ func (m *Model) Init() tea.Cmd {
 	m.textinput = textinput.New()
 	m.textinput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render("(pesticide) ")
 	m.textinput.Focus()
-	return tea.Batch(textinput.Blink, tea.Println("Type a command and press <ret> to submit, or press <ctrl-d> to exit"))
+	return tea.Batch(textinput.Blink, tea.Println("Type a command and press <ret> to submit"))
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -42,11 +42,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			m.textinput.SetValue("")
-		case tea.KeyCtrlD:
-			// Closing the outgoing channel will cause the main thread to shut down the UI and clean up.
-			// TODO: Send "quit" pesticide command to shut down adapters etc.
-			close(m.output)
-			return m, nil
 		case tea.KeyEnter:
 			cmds = append(cmds, tea.Println(m.textinput.View()))
 			input := m.textinput.Value()

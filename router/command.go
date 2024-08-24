@@ -22,6 +22,11 @@ func (r *Router) handleCommand(cmd command.Command) error {
 			Request: r.focusedAdapter.NewRequest("pause"),
 		})
 	case command.Quit:
+		if r.focusedAdapter == nil {
+			// Quit everything
+			close(r.input)
+			return nil
+		}
 		// TODO: Store whether terminate has been sent and send disconnect in that case
 		if r.focusedAdapter.Capabilities.SupportsTerminateRequest {
 			r.focusedAdapter.Send(&dap.TerminateRequest{

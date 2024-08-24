@@ -10,14 +10,6 @@ import (
 )
 
 func (r *Router) handleDAPMessage(msg message.DapMsg) error {
-	// if _, ok := msg.Msg.(*dap.OutputEvent); !ok {
-	// 	val, err := json.Marshal(msg)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	r.printf("Received DAP message: %s", string(val))
-	// }
-
 	a, ok := r.adapters[msg.Adapter]
 	if !ok {
 		return errors.New("Received message for nonexistent adapter")
@@ -46,6 +38,10 @@ func (r *Router) handleDAPMessage(msg message.DapMsg) error {
 		case *dap.TerminatedEvent:
 			a.Shutdown()
 			delete(r.adapters, a.ID)
+			if r.focusedAdapter == a {
+				r.focusedAdapter = nil
+				// TODO: Focus a different adapter? Decide on UX for this.
+			}
 		case *dap.StoppedEvent:
 			return r.onStoppedEvent(a, msg)
 		case *dap.OutputEvent:
