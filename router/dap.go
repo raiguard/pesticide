@@ -88,7 +88,7 @@ func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) err
 // }
 
 func (r *Router) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent) error {
-	// r.sendSetBreakpointsRequest()
+	r.sendSetBreakpointsRequest(a)
 	if a.Capabilities.SupportsConfigurationDoneRequest {
 		a.Send(&dap.ConfigurationDoneRequest{
 			Request:   a.NewRequest("configurationDone"),
@@ -98,20 +98,20 @@ func (r *Router) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent
 	return nil
 }
 
-// func (r *Router) sendSetBreakpointsRequest() {
-// 	// for filename, breakpoints := range breakpoints {
-// 	// 	a.Send(&dap.SetBreakpointsRequest{
-// 	// 		Request: a.newRequest("setBreakpoints"),
-// 	// 		Arguments: dap.SetBreakpointsArguments{
-// 	// 			Source: dap.Source{
-// 	// 				Name: filename,
-// 	// 				Path: filename,
-// 	// 			},
-// 	// 			Breakpoints: breakpoints,
-// 	// 		},
-// 	// 	})
-// 	// }
-// }
+func (r *Router) sendSetBreakpointsRequest(a *adapter.Adapter) {
+	for filename, breakpoints := range a.Breakpoints {
+		a.Send(&dap.SetBreakpointsRequest{
+			Request: a.NewRequest("setBreakpoints"),
+			Arguments: dap.SetBreakpointsArguments{
+				Source: dap.Source{
+					Name: filename,
+					Path: filename,
+				},
+				Breakpoints: breakpoints,
+			},
+		})
+	}
+}
 
 // func (r *Router) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
 // 	r.stackframes[ctx.Arguments.ThreadId] = res.Body.StackFrames

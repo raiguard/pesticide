@@ -3,6 +3,9 @@ package command
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -10,13 +13,18 @@ type Command interface {
 	command()
 }
 
-type Continue struct{}
-type Launch struct {
-	Name string
-}
-type Pause struct{}
-type Quit struct{}
+type (
+	Break struct {
+		File string
+		Line int
+	}
+	Continue struct{}
+	Launch   struct{ Name string }
+	Pause    struct{}
+	Quit     struct{}
+)
 
+func (b Break) command()    {}
 func (c Continue) command() {}
 func (l Launch) command()   {}
 func (p Pause) command()    {}
@@ -28,8 +36,8 @@ func Parse(input string) (Command, error) {
 		return nil, nil
 	}
 	switch args[0] {
-	// case "break", "b":
-	// 	handler = cmdParseBreak
+	case "break", "b":
+		return cmdParseBreak(args[1:])
 	case "continue", "c":
 		return Continue{}, nil
 	// case "evaluate", "eval", "e":
@@ -47,6 +55,30 @@ func Parse(input string) (Command, error) {
 	default:
 		return nil, errors.New(fmt.Sprintf("Unknown command: %s", args[0]))
 	}
+}
+
+func cmdParseBreak(args []string) (Break, error) {
+	var b Break
+	if len(args) != 2 {
+		return b, errors.New("syntax: break <filename> <line>")
+	}
+	filename, err := filepath.Abs(args[0])
+	if err != nil {
+		return b, err
+	}
+	f, err := os.Open(filename)
+	defer f.Close()
+	if err != nil {
+		return b, err
+	}
+	// TODO: Validate that file exists
+	b.File = filename
+	line, err := strconv.ParseUint(args[1], 0, 32)
+	if err != nil {
+		return b, err
+	}
+	b.Line = int(line)
+	return b, nil
 }
 
 func cmdParseLaunch(args []string) (Launch, error) {

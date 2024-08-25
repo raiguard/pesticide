@@ -17,23 +17,25 @@ import (
 )
 
 type Adapter struct {
+	// Internally managed
 	Capabilities    dap.Capabilities
 	ID              string
+	Seq             int
 	PendingRequests map[int]dap.Message
-	FocusedThread   int
-
-	rw        bufio.ReadWriter
+	// Managed by router
+	Threads           []dap.Thread
+	FocusedThread     int
+	StackFrames       map[int][]dap.StackFrame
+	FocusedStackFrame *dap.StackFrame
+	Breakpoints       map[string][]dap.SourceBreakpoint
+	// Channels
 	sendQueue chan dap.Message
 	recvQueue chan message.Message
-
+	// Internal I/O
+	rw         bufio.ReadWriter
 	cmd        *exec.Cmd
 	launchArgs json.RawMessage
 	conn       *net.Conn
-
-	seq               int
-	threads           []dap.Thread
-	stackframes       map[int][]dap.StackFrame
-	focusedStackFrame *dap.StackFrame
 }
 
 func New(config config.AdapterConfig, recvQueue chan message.Message) (*Adapter, error) {
@@ -89,20 +91,21 @@ func New(config config.AdapterConfig, recvQueue chan message.Message) (*Adapter,
 	}
 
 	a := &Adapter{
-		rw:                *rw,
+		Capabilities:      dap.Capabilities{},
+		ID:                id,
+		Seq:               0,
+		PendingRequests:   map[int]dap.Message{},
+		Threads:           []dap.Thread{},
+		FocusedThread:     0,
+		StackFrames:       map[int][]dap.StackFrame{},
+		FocusedStackFrame: &dap.StackFrame{},
+		Breakpoints:       map[string][]dap.SourceBreakpoint{},
 		sendQueue:         make(chan dap.Message),
 		recvQueue:         recvQueue,
+		rw:                *rw,
 		cmd:               cmd,
 		launchArgs:        config.Args,
 		conn:              conn,
-		Capabilities:      dap.Capabilities{},
-		ID:                id,
-		seq:               0,
-		threads:           []dap.Thread{},
-		stackframes:       map[int][]dap.StackFrame{},
-		PendingRequests:   map[int]dap.Message{},
-		focusedStackFrame: &dap.StackFrame{},
-		FocusedThread:     0,
 	}
 
 	go a.sendFromQueue()
@@ -131,9 +134,9 @@ func (a *Adapter) Send(msg dap.Message) {
 }
 
 func (a *Adapter) NewRequest(command string) dap.Request {
-	a.seq++
+	a.Seq++
 	return dap.Request{
-		ProtocolMessage: dap.ProtocolMessage{Seq: a.seq, Type: "request"},
+		ProtocolMessage: dap.ProtocolMessage{Seq: a.Seq, Type: "request"},
 		Command:         command,
 	}
 }
@@ -174,8 +177,8 @@ func (a *Adapter) receive() {
 		log.Printf("[%s] -> %s", a.ID, string(val))
 		// Increment seq
 		seq := msg.GetSeq()
-		if seq > a.seq {
-			a.seq = seq
+		if seq > a.Seq {
+			a.Seq = seq
 		}
 		a.recvQueue <- message.DapMsg{Adapter: a.ID, Msg: msg}
 	}

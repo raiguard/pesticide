@@ -11,6 +11,17 @@ import (
 
 func (r *Router) handleCommand(cmd command.Command) error {
 	switch cmd := cmd.(type) {
+	case command.Break:
+		a := r.focusedAdapter
+		if a == nil {
+			return errors.New("No adapter in focus")
+		}
+		if _, ok := a.Breakpoints[cmd.File]; !ok {
+			a.Breakpoints[cmd.File] = []dap.SourceBreakpoint{}
+		}
+		// TODO: Deduplicate
+		a.Breakpoints[cmd.File] = append(a.Breakpoints[cmd.File], dap.SourceBreakpoint{Line: cmd.Line})
+		r.sendSetBreakpointsRequest(a)
 	case command.Continue:
 		if r.focusedAdapter == nil {
 			return errors.New("No adapter in focus")
