@@ -16,6 +16,14 @@ import (
 	"github.com/raiguard/pesticide/message"
 )
 
+type AdapterState int
+
+const (
+	Initializing AdapterState = iota
+	Running
+	Stopped
+)
+
 type Adapter struct {
 	// Internally managed
 	Capabilities    dap.Capabilities
@@ -23,6 +31,7 @@ type Adapter struct {
 	Seq             int
 	PendingRequests map[int]dap.Message
 	// Managed by router
+	State             AdapterState
 	Threads           []dap.Thread
 	FocusedThread     int
 	StackFrames       map[int][]dap.StackFrame
@@ -125,7 +134,6 @@ func (a *Adapter) Shutdown() {
 		cmd.Process.Kill()
 	}
 	log.Printf("[%s] EXITED\n", a.ID)
-	// TODO: Remove from controller adapters list
 }
 
 func (a *Adapter) Send(msg dap.Message) {

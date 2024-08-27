@@ -19,6 +19,7 @@ type (
 		Line int
 	}
 	Continue struct{}
+	Evaluate struct{ Expr string }
 	Launch   struct{ Name string }
 	Pause    struct{}
 	Quit     struct{}
@@ -26,6 +27,7 @@ type (
 
 func (b Break) command()    {}
 func (c Continue) command() {}
+func (e Evaluate) command() {}
 func (l Launch) command()   {}
 func (p Pause) command()    {}
 func (q Quit) command()     {}
@@ -40,8 +42,8 @@ func Parse(input string) (Command, error) {
 		return cmdParseBreak(args[1:])
 	case "continue", "c":
 		return Continue{}, nil
-	// case "evaluate", "eval", "e":
-	// 	handler = cmdParseEvaluate
+	case "evaluate", "eval", "e":
+		return Evaluate{Expr: strings.Join(args[1:], " ")}, nil
 	case "launch", "l":
 		return cmdParseLaunch(args[1:])
 	case "pause", "p":

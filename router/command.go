@@ -29,6 +29,22 @@ func (r *Router) handleCommand(cmd command.Command) error {
 		r.focusedAdapter.Send(&dap.ContinueRequest{
 			Request: r.focusedAdapter.NewRequest("continue"),
 		})
+	case command.Evaluate:
+		a := r.focusedAdapter
+		if a == nil {
+			return errors.New("No adapter in focus")
+		}
+		if a.State != adapter.Stopped {
+			return errors.New("Cannot evaluate expressions while running")
+		}
+		a.Send(&dap.EvaluateRequest{
+			Request: a.NewRequest("evaluate"),
+			Arguments: dap.EvaluateArguments{
+				Expression: cmd.Expr,
+				FrameId:    a.FocusedStackFrame.Id,
+				Context:    "repl",
+			},
+		})
 	case command.Launch:
 		return r.handleLaunchCommand(cmd)
 	case command.Pause:

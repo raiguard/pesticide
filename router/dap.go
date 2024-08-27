@@ -17,7 +17,7 @@ func (r *Router) handleDAPMessage(msg message.DapMsg) error {
 
 	switch msg := msg.Msg.(type) {
 	case dap.ResponseMessage:
-		_, ok := a.PendingRequests[msg.GetResponse().RequestSeq]
+		ctx, ok := a.PendingRequests[msg.GetResponse().RequestSeq]
 		if !ok {
 			return errors.New("Received a response to a non-existent request")
 		}
@@ -26,13 +26,15 @@ func (r *Router) handleDAPMessage(msg message.DapMsg) error {
 		switch msg := msg.(type) {
 		case *dap.InitializeResponse:
 			return r.onInitializeResponse(a, msg)
-			// case *dap.StackTraceResponse:
-			// 	return r.onStackTraceResponse(msg, ctx.(*dap.StackTraceRequest))
-			// case *dap.EvaluateResponse:
-			// 	return r.onEvaluateResponse(msg)
+		case *dap.StackTraceResponse:
+			return r.onStackTraceResponse(a, msg, ctx.(*dap.StackTraceRequest))
+		case *dap.EvaluateResponse:
+			return r.onEvaluateResponse(msg)
 		}
 	case dap.EventMessage:
 		switch msg := msg.(type) {
+		case *dap.ContinuedEvent:
+			a.State = adapter.Running
 		case *dap.InitializedEvent:
 			return r.onInitializedEvent(a, msg)
 		case *dap.TerminatedEvent:
@@ -63,12 +65,13 @@ func (r *Router) onOutputEvent(a *adapter.Adapter, ev *dap.OutputEvent) error {
 }
 
 func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) error {
+	a.State = adapter.Stopped
 	r.println(a.ID, " stopped: ", event.Body.Reason, ": ", event.Body.Text)
 	a.FocusedThread = event.Body.ThreadId
-	// a.Send(&dap.StackTraceRequest{
-	// 	Request:   a.NewRequest("stackTrace"),
-	// 	Arguments: dap.StackTraceArguments{ThreadId: event.Body.ThreadId},
-	// })
+	a.Send(&dap.StackTraceRequest{
+		Request:   a.NewRequest("stackTrace"),
+		Arguments: dap.StackTraceArguments{ThreadId: event.Body.ThreadId},
+	})
 	return nil
 }
 
@@ -88,6 +91,7 @@ func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) err
 // }
 
 func (r *Router) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent) error {
+	a.State = adapter.Running
 	r.sendSetBreakpointsRequest(a)
 	if a.Capabilities.SupportsConfigurationDoneRequest {
 		a.Send(&dap.ConfigurationDoneRequest{
@@ -113,15 +117,16 @@ func (r *Router) sendSetBreakpointsRequest(a *adapter.Adapter) {
 	}
 }
 
-// func (r *Router) onStackTraceResponse(res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) {
-// 	r.stackframes[ctx.Arguments.ThreadId] = res.Body.StackFrames
-// 	r.focusedStackFrame = &r.stackframes[ctx.Arguments.ThreadId][0]
-// 	r.jumpInKak()
-// }
+func (r *Router) onStackTraceResponse(a *adapter.Adapter, res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) error {
+	a.StackFrames[ctx.Arguments.ThreadId] = res.Body.StackFrames
+	a.FocusedStackFrame = &a.StackFrames[ctx.Arguments.ThreadId][0]
+	return nil
+}
 
-// func (r *Router) onEvaluateResponse(res *dap.EvaluateResponse) {
-// 	// ui.print(res.Body.Result)
-// }
+func (r *Router) onEvaluateResponse(res *dap.EvaluateResponse) error {
+	r.println(res.Body.Result)
+	return nil
+}
 
 // func (r *Router) travelStackFrame(delta int) {
 // 	if r.focusedStackFrame == nil {
