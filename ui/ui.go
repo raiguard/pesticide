@@ -49,7 +49,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, tea.Println(err))
 				break
 			}
-			log.Printf("Command: %+v", cmd)
+			log.Printf("Command: %s", input)
 			m.output <- message.Command{Cmd: cmd}
 		case tea.KeyUp:
 			m.commandHistory.Up()
