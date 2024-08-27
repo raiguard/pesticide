@@ -12,69 +12,60 @@ import (
 func (r *Router) handleCommand(cmd command.Command) error {
 	switch cmd := cmd.(type) {
 	case command.Break:
-		a := r.focusedAdapter
-		if a == nil {
-			return errors.New("No adapter in focus")
-		}
-		if _, ok := a.Breakpoints[cmd.File]; !ok {
-			a.Breakpoints[cmd.File] = []dap.SourceBreakpoint{}
-		}
-		// TODO: Deduplicate
-		a.Breakpoints[cmd.File] = append(a.Breakpoints[cmd.File], dap.SourceBreakpoint{Line: cmd.Line})
-		r.sendSetBreakpointsRequest(a)
+		return r.handleBreakCommand(cmd)
 	case command.Continue:
-		if r.focusedAdapter == nil {
-			return errors.New("No adapter in focus")
-		}
-		r.focusedAdapter.Send(&dap.ContinueRequest{
-			Request: r.focusedAdapter.NewRequest("continue"),
-		})
+		return r.handleContinueCommand(cmd)
 	case command.Evaluate:
-		a := r.focusedAdapter
-		if a == nil {
-			return errors.New("No adapter in focus")
-		}
-		if a.State != adapter.Stopped {
-			return errors.New("Cannot evaluate expressions while running")
-		}
-		a.Send(&dap.EvaluateRequest{
-			Request: a.NewRequest("evaluate"),
-			Arguments: dap.EvaluateArguments{
-				Expression: cmd.Expr,
-				FrameId:    a.FocusedStackFrame.Id,
-				Context:    "repl",
-			},
-		})
+		return r.handleEvaluateCommand(cmd)
 	case command.Launch:
 		return r.handleLaunchCommand(cmd)
 	case command.Pause:
-		if r.focusedAdapter == nil {
-			return errors.New("No adapter in focus")
-		}
-		r.focusedAdapter.Send(&dap.PauseRequest{
-			Request: r.focusedAdapter.NewRequest("pause"),
-		})
+		return r.handlePauseCommand(cmd)
 	case command.Quit:
-		if r.focusedAdapter == nil {
-			// Quit everything
-			close(r.input)
-			return nil
-		}
-		// TODO: Store whether terminate has been sent and send disconnect in that case
-		if r.focusedAdapter.Capabilities.SupportsTerminateRequest {
-			r.focusedAdapter.Send(&dap.TerminateRequest{
-				Request: r.focusedAdapter.NewRequest("terminate"),
-			})
-		} else {
-			r.focusedAdapter.Send(&dap.DisconnectRequest{
-				Request: r.focusedAdapter.NewRequest("disconnect"),
-				Arguments: dap.DisconnectArguments{
-					TerminateDebuggee: true,
-				},
-			})
-			// TODO: Force-remove the adapter from the adapters list
-		}
+		return r.handleQuitCommand(cmd)
 	}
+	return nil
+}
+
+func (r *Router) handleBreakCommand(cmd command.Break) error {
+	a := r.focusedAdapter
+	if a == nil {
+		return errors.New("No adapter in focus")
+	}
+	if _, ok := a.Breakpoints[cmd.File]; !ok {
+		a.Breakpoints[cmd.File] = []dap.SourceBreakpoint{}
+	}
+	// TODO: Deduplicate
+	a.Breakpoints[cmd.File] = append(a.Breakpoints[cmd.File], dap.SourceBreakpoint{Line: cmd.Line})
+	r.sendSetBreakpointsRequest(a)
+	return nil
+}
+
+func (r *Router) handleContinueCommand(cmd command.Continue) error {
+	a := r.focusedAdapter
+	if a == nil {
+		return errors.New("No adapter in focus")
+	}
+	a.Send(&dap.ContinueRequest{Request: a.NewRequest("continue")})
+	return nil
+}
+
+func (r *Router) handleEvaluateCommand(cmd command.Evaluate) error {
+	a := r.focusedAdapter
+	if a == nil {
+		return errors.New("No adapter in focus")
+	}
+	if a.State != adapter.Stopped {
+		return errors.New("Cannot evaluate expressions while running")
+	}
+	a.Send(&dap.EvaluateRequest{
+		Request: a.NewRequest("evaluate"),
+		Arguments: dap.EvaluateArguments{
+			Expression: cmd.Expr,
+			FrameId:    a.FocusedStackFrame.Id,
+			Context:    "repl",
+		},
+	})
 	return nil
 }
 
@@ -102,4 +93,39 @@ func (r *Router) handleLaunchCommand(cmd command.Launch) error {
 	})
 	r.printf("Sent initialization request")
 	return nil
+}
+
+func (r *Router) handlePauseCommand(cmd command.Pause) error {
+	a := r.focusedAdapter
+	if a == nil {
+		return errors.New("No adapter in focus")
+	}
+	a.Send(&dap.PauseRequest{
+		Request: a.NewRequest("pause"),
+	})
+	return nil
+
+}
+
+func (r *Router) handleQuitCommand(cmd command.Quit) error {
+	a := r.focusedAdapter
+	if a == nil {
+		// Quit everything
+		close(r.input)
+		return nil
+	}
+	// TODO: Store whether terminate has been sent and send disconnect in that case
+	if a.Capabilities.SupportsTerminateRequest {
+		a.Send(&dap.TerminateRequest{Request: a.NewRequest("terminate")})
+	} else {
+		a.Send(&dap.DisconnectRequest{
+			Request: a.NewRequest("disconnect"),
+			Arguments: dap.DisconnectArguments{
+				TerminateDebuggee: true,
+			},
+		})
+		// TODO: Force-remove the adapter from the adapters list
+	}
+	return nil
+
 }
