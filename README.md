@@ -45,6 +45,7 @@ Launch the `pesticide` executable and it will source the configuration file. You
 **NOTE:** A heavy rewrite is underway. This list represents all currently functioning commands at the time of writing.
 
 - `break <filename> <line>`
+- `evaluate <expression>`
 - `continue`
 - `launch <adapter name>`
 - `pause`
