@@ -2,6 +2,7 @@ package router
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/google/go-dap"
@@ -120,11 +121,44 @@ func (r *Router) sendSetBreakpointsRequest(a *adapter.Adapter) {
 func (r *Router) onStackTraceResponse(a *adapter.Adapter, res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) error {
 	a.StackFrames[ctx.Arguments.ThreadId] = res.Body.StackFrames
 	a.FocusedStackFrame = &a.StackFrames[ctx.Arguments.ThreadId][0]
-	return nil
+	return r.printFileLocation(a)
 }
 
 func (r *Router) onEvaluateResponse(res *dap.EvaluateResponse) error {
 	r.println(res.Body.Result)
+	return nil
+}
+
+func (r *Router) printFileLocation(a *adapter.Adapter) error {
+	sf := a.FocusedStackFrame
+	if sf == nil {
+		return errors.New("No stack frame in context")
+	}
+	if sf.Source.SourceReference != 0 {
+		return errors.New("sourceReference is unimplemented")
+	}
+	path := sf.Source.Path
+	if path == "" {
+		return errors.New("Path is empty")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(contents), "\n")
+	if len(lines)-1 < sf.Line {
+		return errors.New("Invalid line number")
+	}
+	for i := sf.Line - 3; i < sf.Line+4; i++ {
+		if i < 0 || i > len(lines)-1 {
+			continue
+		}
+		prefix := ""
+		if i == sf.Line-1 {
+			prefix = "->"
+		}
+		r.printf("%3s %3d: %s", prefix, i+1, lines[i])
+	}
 	return nil
 }
 
