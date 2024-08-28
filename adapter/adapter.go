@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -54,7 +53,6 @@ func New(config config.AdapterConfig) (*Adapter, error) {
 	var cmd *exec.Cmd
 	var conn *net.Conn
 	var rw *bufio.ReadWriter
-	var id string
 	if config.Cmd != nil {
 		args, err := shlex.Split(*config.Cmd)
 		if err != nil {
@@ -78,7 +76,6 @@ func New(config config.AdapterConfig) (*Adapter, error) {
 		reader := bufio.NewReader(stdout)
 		writer := bufio.NewWriter(stdin)
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
-		id = fmt.Sprint(cmd.Process.Pid)
 	}
 	if config.Addr != nil {
 		if cmd != nil {
@@ -95,7 +92,6 @@ func New(config config.AdapterConfig) (*Adapter, error) {
 
 		// TODO: Combine with STDIO input/output
 		rw = &bufio.ReadWriter{Reader: reader, Writer: writer}
-		id = *config.Addr
 	}
 
 	if rw == nil {
@@ -104,7 +100,7 @@ func New(config config.AdapterConfig) (*Adapter, error) {
 
 	a := &Adapter{
 		Capabilities:      dap.Capabilities{},
-		ID:                id,
+		ID:                config.ID,
 		Seq:               0,
 		PendingRequests:   map[int]dap.Message{},
 		Threads:           []dap.Thread{},
