@@ -14,23 +14,29 @@ type Command interface {
 }
 
 type (
-	Break struct {
+	Backtrace struct{}
+	Break     struct {
 		File string
 		Line int
 	}
 	Continue struct{}
+	Down     int
 	Evaluate struct{ Expr string }
 	Launch   struct{ Name string }
 	Pause    struct{}
 	Quit     struct{}
+	Up       int
 )
 
-func (b Break) command()    {}
-func (c Continue) command() {}
-func (e Evaluate) command() {}
-func (l Launch) command()   {}
-func (p Pause) command()    {}
-func (q Quit) command()     {}
+func (b Backtrace) command() {}
+func (b Break) command()     {}
+func (c Continue) command()  {}
+func (d Down) command()      {}
+func (e Evaluate) command()  {}
+func (l Launch) command()    {}
+func (p Pause) command()     {}
+func (q Quit) command()      {}
+func (u Up) command()        {}
 
 func Parse(input string) (Command, error) {
 	args := strings.Split(input, " ")
@@ -38,10 +44,14 @@ func Parse(input string) (Command, error) {
 		return nil, nil
 	}
 	switch args[0] {
+	case "backtrace", "bt":
+		return Backtrace{}, nil
 	case "break", "b":
 		return cmdParseBreak(args[1:])
 	case "continue", "c":
 		return Continue{}, nil
+	case "down", "dow":
+		return Down(1), nil
 	case "evaluate", "eval", "e":
 		return Evaluate{Expr: strings.Join(args[1:], " ")}, nil
 	case "launch", "l":
@@ -50,10 +60,8 @@ func Parse(input string) (Command, error) {
 		return Pause{}, nil
 	case "quit", "q":
 		return Quit{}, nil
-	// case "up":
-	// 	handler = cmdParseUp
-	// case "down", "dow":
-	// 	handler = cmdParseDown
+	case "up":
+		return Up(1), nil
 	default:
 		return nil, errors.New(fmt.Sprintf("Unknown command: %s", args[0]))
 	}

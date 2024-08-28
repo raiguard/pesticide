@@ -88,21 +88,6 @@ func (m *Model) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) tea.
 	return tea.Println(a.ID, " stopped: ", event.Body.Reason, ": ", event.Body.Text)
 }
 
-// func (r *Model) sendPauseRequest() {
-// 	var threadId int
-// 	if len(r.threads) == 0 {
-// 		threadId = 1
-// 	} else {
-// 		threadId = r.focusedThread
-// 	}
-// 	r.Send(&dap.PauseRequest{
-// 		Request: r.NewRequest("pause"),
-// 		Arguments: dap.PauseArguments{
-// 			ThreadId: threadId,
-// 		},
-// 	})
-// }
-
 func (m *Model) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent) tea.Cmd {
 	a.State = adapter.Running
 	m.sendSetBreakpointsRequest(a)
@@ -174,28 +159,27 @@ func (m *Model) printFileLocation(a *adapter.Adapter) tea.Cmd {
 	return tea.Println(output)
 }
 
-// func (r *Model) travelStackFrame(delta int) {
-// 	if r.focusedStackFrame == nil {
-// 		// ui.print("no stack frame is selected")
-// 		return
-// 	}
+func (m *Model) travelStackFrame(a *adapter.Adapter, delta int) tea.Cmd {
+	if a.FocusedStackFrame == nil {
+		return tea.Println("no stack frame is in focus")
+	}
 
-// 	stackFrames := r.stackframes[r.focusedThread]
-// 	toFocus := -1
-// 	for i, frame := range stackFrames {
-// 		if frame.Id == r.focusedStackFrame.Id {
-// 			toFocus = i + delta
-// 			break
-// 		}
-// 	}
-// 	if toFocus < 0 {
-// 		toFocus = 0
-// 	} else if len(stackFrames)-1 < toFocus {
-// 		toFocus = len(stackFrames) - 1
-// 	}
-// 	r.focusedStackFrame = &stackFrames[toFocus]
-// 	r.jumpInKak()
-// }
+	stackFrames := a.StackFrames[a.FocusedThread]
+	toFocus := -1
+	for i, frame := range stackFrames {
+		if frame.Id == a.FocusedStackFrame.Id {
+			toFocus = i + delta
+			break
+		}
+	}
+	if toFocus < 0 {
+		toFocus = 0
+	} else if len(stackFrames)-1 < toFocus {
+		toFocus = len(stackFrames) - 1
+	}
+	a.FocusedStackFrame = &stackFrames[toFocus]
+	return m.printFileLocation(a)
+}
 
 // func (r *Model) jumpInKak() {
 // 	cmd := exec.Command("kak", "-p", "Krastorio2")

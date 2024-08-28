@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-dap"
 	"github.com/raiguard/pesticide/adapter"
@@ -9,6 +11,8 @@ import (
 
 func (m *Model) handleCommand(cmd command.Command) tea.Cmd {
 	switch cmd := cmd.(type) {
+	case command.Backtrace:
+		return m.handleBacktraceCommand(cmd)
 	case command.Break:
 		return m.handleBreakCommand(cmd)
 	case command.Continue:
@@ -21,8 +25,24 @@ func (m *Model) handleCommand(cmd command.Command) tea.Cmd {
 		return m.handlePauseCommand(cmd)
 	case command.Quit:
 		return m.handleQuitCommand(cmd)
+	case command.Down:
+		return m.handleStackFrameCommand(-int(cmd))
+	case command.Up:
+		return m.handleStackFrameCommand(int(cmd))
 	}
 	return nil
+}
+
+func (m *Model) handleBacktraceCommand(cmd command.Backtrace) tea.Cmd {
+	a := m.focusedAdapter
+	if a == nil {
+		return tea.Println("No adapter in focus")
+	}
+	var output string
+	for _, frame := range a.StackFrames[a.FocusedThread] {
+		output += fmt.Sprintf("%s:%d\n", frame.Source.Path, frame.Line)
+	}
+	return tea.Printf("%s", output)
 }
 
 func (m *Model) handleBreakCommand(cmd command.Break) tea.Cmd {
@@ -123,4 +143,12 @@ func (m *Model) handleQuitCommand(cmd command.Quit) tea.Cmd {
 		// TODO: Force-remove the adapter from the adapters list
 	}
 	return nil
+}
+
+func (m *Model) handleStackFrameCommand(delta int) tea.Cmd {
+	a := m.focusedAdapter
+	if a == nil {
+		return tea.Println("No adapter in focus")
+	}
+	return m.travelStackFrame(a, delta)
 }
