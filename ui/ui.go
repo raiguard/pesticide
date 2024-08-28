@@ -6,20 +6,24 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/raiguard/pesticide/adapter"
 	"github.com/raiguard/pesticide/command"
-	"github.com/raiguard/pesticide/message"
+	"github.com/raiguard/pesticide/config"
 )
 
 type Model struct {
-	output chan message.Message
+	config         config.Config
+	adapters       map[string]*adapter.Adapter
+	focusedAdapter *adapter.Adapter
 
 	commandHistory CommandHistory
 	textinput      textinput.Model
 }
 
-func New(output chan message.Message) *tea.Program {
+func New(config config.Config) *tea.Program {
 	return tea.NewProgram(&Model{
-		output:         output,
+		config:         config,
+		adapters:       map[string]*adapter.Adapter{},
 		commandHistory: CommandHistory{},
 		textinput:      textinput.Model{},
 	})
@@ -37,6 +41,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
+		case tea.KeyCtrlD:
+			return m, tea.Quit // Escape hatch for development
 		case tea.KeyCtrlC:
 			m.textinput.SetValue("")
 		case tea.KeyEnter:
@@ -50,7 +56,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			log.Printf("Command: %s", input)
-			m.output <- message.Command{Cmd: cmd}
+			cmds = append(cmds, m.handleCommand(cmd))
 		case tea.KeyUp:
 			m.commandHistory.Up()
 			m.textinput.SetValue(m.commandHistory.Get())
@@ -60,8 +66,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textinput.SetValue(m.commandHistory.Get())
 			m.textinput.SetCursor(999)
 		}
-	case message.Print:
-		cmds = append(cmds, tea.Println(msg.Obj...))
+	case adapter.Msg:
+		cmds = append(cmds, m.handleAdapterMessage(msg))
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)

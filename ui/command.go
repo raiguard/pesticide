@@ -1,62 +1,60 @@
-package router
+package ui
 
 import (
-	"errors"
-	"fmt"
-
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-dap"
 	"github.com/raiguard/pesticide/adapter"
 	"github.com/raiguard/pesticide/command"
 )
 
-func (r *Router) handleCommand(cmd command.Command) error {
+func (m *Model) handleCommand(cmd command.Command) tea.Cmd {
 	switch cmd := cmd.(type) {
 	case command.Break:
-		return r.handleBreakCommand(cmd)
+		return m.handleBreakCommand(cmd)
 	case command.Continue:
-		return r.handleContinueCommand(cmd)
+		return m.handleContinueCommand(cmd)
 	case command.Evaluate:
-		return r.handleEvaluateCommand(cmd)
+		return m.handleEvaluateCommand(cmd)
 	case command.Launch:
-		return r.handleLaunchCommand(cmd)
+		return m.handleLaunchCommand(cmd)
 	case command.Pause:
-		return r.handlePauseCommand(cmd)
+		return m.handlePauseCommand(cmd)
 	case command.Quit:
-		return r.handleQuitCommand(cmd)
+		return m.handleQuitCommand(cmd)
 	}
 	return nil
 }
 
-func (r *Router) handleBreakCommand(cmd command.Break) error {
-	a := r.focusedAdapter
+func (m *Model) handleBreakCommand(cmd command.Break) tea.Cmd {
+	a := m.focusedAdapter
 	if a == nil {
-		return errors.New("No adapter in focus")
+		return tea.Println("No adapter in focus")
 	}
 	if _, ok := a.Breakpoints[cmd.File]; !ok {
 		a.Breakpoints[cmd.File] = []dap.SourceBreakpoint{}
 	}
 	// TODO: Deduplicate
 	a.Breakpoints[cmd.File] = append(a.Breakpoints[cmd.File], dap.SourceBreakpoint{Line: cmd.Line})
-	r.sendSetBreakpointsRequest(a)
+	m.sendSetBreakpointsRequest(a)
 	return nil
 }
 
-func (r *Router) handleContinueCommand(cmd command.Continue) error {
-	a := r.focusedAdapter
+func (m *Model) handleContinueCommand(cmd command.Continue) tea.Cmd {
+	a := m.focusedAdapter
 	if a == nil {
-		return errors.New("No adapter in focus")
+		return tea.Println("No adapter in focus")
 	}
 	a.Send(&dap.ContinueRequest{Request: a.NewRequest("continue")})
 	return nil
 }
 
-func (r *Router) handleEvaluateCommand(cmd command.Evaluate) error {
-	a := r.focusedAdapter
+func (m *Model) handleEvaluateCommand(cmd command.Evaluate) tea.Cmd {
+	a := m.focusedAdapter
 	if a == nil {
-		return errors.New("No adapter in focus")
+		return tea.Println("No adapter in focus")
 	}
 	if a.State != adapter.Stopped {
-		return errors.New("Cannot evaluate expressions while running")
+		return tea.Println("Cannot evaluate expressions while running")
 	}
 	a.Send(&dap.EvaluateRequest{
 		Request: a.NewRequest("evaluate"),
@@ -69,17 +67,17 @@ func (r *Router) handleEvaluateCommand(cmd command.Evaluate) error {
 	return nil
 }
 
-func (r *Router) handleLaunchCommand(cmd command.Launch) error {
-	adapterConfig, ok := r.config.Adapters[cmd.Name]
+func (m *Model) handleLaunchCommand(cmd command.Launch) tea.Cmd {
+	adapterConfig, ok := m.config.Adapters[cmd.Name]
 	if !ok {
-		return errors.New(fmt.Sprintf("Unknown debug adapter %s", cmd.Name))
+		return tea.Printf("Unknown debug adapter %s", cmd.Name)
 	}
-	a, err := adapter.New(adapterConfig, r.input)
+	a, err := adapter.New(adapterConfig)
 	if err != nil {
-		return err
+		return tea.Println(err)
 	}
-	r.adapters[a.ID] = a
-	r.focusedAdapter = a
+	m.adapters[a.ID] = a
+	m.focusedAdapter = a
 	a.Send(&dap.InitializeRequest{
 		Request: a.NewRequest("initialize"),
 		Arguments: dap.InitializeRequestArguments{
@@ -91,14 +89,13 @@ func (r *Router) handleLaunchCommand(cmd command.Launch) error {
 			ColumnsStartAt1: true,
 		},
 	})
-	r.printf("Sent initialization request")
-	return nil
+	return func() tea.Msg { return a.Receive() }
 }
 
-func (r *Router) handlePauseCommand(cmd command.Pause) error {
-	a := r.focusedAdapter
+func (m *Model) handlePauseCommand(cmd command.Pause) tea.Cmd {
+	a := m.focusedAdapter
 	if a == nil {
-		return errors.New("No adapter in focus")
+		return tea.Println("No adapter in focus")
 	}
 	a.Send(&dap.PauseRequest{
 		Request: a.NewRequest("pause"),
@@ -107,12 +104,11 @@ func (r *Router) handlePauseCommand(cmd command.Pause) error {
 
 }
 
-func (r *Router) handleQuitCommand(cmd command.Quit) error {
-	a := r.focusedAdapter
+func (m *Model) handleQuitCommand(cmd command.Quit) tea.Cmd {
+	a := m.focusedAdapter
 	if a == nil {
-		// Quit everything
-		close(r.input)
-		return nil
+		// TODO: Clean up unfocused adapters
+		return tea.Quit
 	}
 	// TODO: Store whether terminate has been sent and send disconnect in that case
 	if a.Capabilities.SupportsTerminateRequest {
@@ -127,5 +123,4 @@ func (r *Router) handleQuitCommand(cmd command.Quit) error {
 		// TODO: Force-remove the adapter from the adapters list
 	}
 	return nil
-
 }

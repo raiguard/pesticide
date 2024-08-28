@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os/exec"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-dap"
 	"github.com/google/shlex"
 	"github.com/raiguard/pesticide/config"
-	"github.com/raiguard/pesticide/message"
 )
 
 type AdapterState int
@@ -37,9 +38,6 @@ type Adapter struct {
 	StackFrames       map[int][]dap.StackFrame
 	FocusedStackFrame *dap.StackFrame
 	Breakpoints       map[string][]dap.SourceBreakpoint
-	// Channels
-	sendQueue chan dap.Message
-	recvQueue chan message.Message
 	// Internal I/O
 	rw         bufio.ReadWriter
 	cmd        *exec.Cmd
@@ -47,7 +45,12 @@ type Adapter struct {
 	conn       *net.Conn
 }
 
-func New(config config.AdapterConfig, recvQueue chan message.Message) (*Adapter, error) {
+type Msg struct {
+	ID  string
+	Msg tea.Msg
+}
+
+func New(config config.AdapterConfig) (*Adapter, error) {
 	var cmd *exec.Cmd
 	var conn *net.Conn
 	var rw *bufio.ReadWriter
@@ -109,22 +112,16 @@ func New(config config.AdapterConfig, recvQueue chan message.Message) (*Adapter,
 		StackFrames:       map[int][]dap.StackFrame{},
 		FocusedStackFrame: &dap.StackFrame{},
 		Breakpoints:       map[string][]dap.SourceBreakpoint{},
-		sendQueue:         make(chan dap.Message),
-		recvQueue:         recvQueue,
 		rw:                *rw,
 		cmd:               cmd,
 		launchArgs:        config.Args,
 		conn:              conn,
 	}
 
-	go a.sendFromQueue()
-	go a.receive()
-
 	return a, nil
 }
 
 func (a *Adapter) Shutdown() {
-	close(a.sendQueue)
 	conn := a.conn
 	if conn != nil {
 		(*conn).Close()
@@ -138,7 +135,44 @@ func (a *Adapter) Shutdown() {
 
 func (a *Adapter) Send(msg dap.Message) {
 	a.PendingRequests[msg.GetSeq()] = msg
-	a.sendQueue <- msg
+	err := dap.WriteProtocolMessage(a.rw.Writer, msg)
+	if err != nil {
+		log.Println("Unable to send message to adapter: ", err)
+		return
+	}
+	val, err := json.Marshal(msg)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("[%s] <- %s", a.ID, string(val))
+	a.rw.Writer.Flush()
+}
+
+func (a *Adapter) Receive() Msg {
+	if a == nil {
+		return Msg{}
+	}
+	res := Msg{ID: a.ID}
+	msg, err := dap.ReadProtocolMessage(a.rw.Reader)
+	if err != nil {
+		if !errors.Is(err, io.EOF) {
+			res.Msg = tea.Println(err)
+		}
+		return res
+	}
+	val, err := json.Marshal(msg)
+	if err != nil {
+		res.Msg = tea.Println(err)
+		return res
+	}
+	log.Printf("[%s] -> %s", a.ID, string(val))
+	// Increment seq
+	seq := msg.GetSeq()
+	if seq > a.Seq {
+		a.Seq = seq
+	}
+	res.Msg = msg
+	return res
 }
 
 func (a *Adapter) NewRequest(command string) dap.Request {
@@ -154,40 +188,4 @@ func (a *Adapter) Launch() {
 		Request:   a.NewRequest("launch"),
 		Arguments: a.launchArgs,
 	})
-}
-
-func (a *Adapter) sendFromQueue() {
-	for msg := range a.sendQueue {
-		err := dap.WriteProtocolMessage(a.rw.Writer, msg)
-		if err != nil {
-			log.Println("Unable to send message to adapter: ", err)
-			continue
-		}
-		val, err := json.Marshal(msg)
-		if err != nil {
-			panic(err)
-		}
-		log.Printf("[%s] <- %s", a.ID, string(val))
-		a.rw.Writer.Flush()
-	}
-}
-
-func (a *Adapter) receive() {
-	for {
-		msg, err := dap.ReadProtocolMessage(a.rw.Reader)
-		if err != nil {
-			break
-		}
-		val, err := json.Marshal(msg)
-		if err != nil {
-			panic(err)
-		}
-		log.Printf("[%s] -> %s", a.ID, string(val))
-		// Increment seq
-		seq := msg.GetSeq()
-		if seq > a.Seq {
-			a.Seq = seq
-		}
-		a.recvQueue <- message.DapMsg{Adapter: a.ID, Msg: msg}
-	}
 }

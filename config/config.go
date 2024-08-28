@@ -14,6 +14,7 @@ type AdapterConfig struct {
 	Cmd  *string
 	Args json.RawMessage
 	Addr *string
+	ID   string `json:",omitempty"`
 }
 
 func New(path string) Config {
@@ -29,7 +30,7 @@ func New(path string) Config {
 	if len(config.Adapters) == 0 {
 		panic(errors.New("No adapters were specified"))
 	}
-	for name, adapter := range config.Adapters {
+	for id, adapter := range config.Adapters {
 		if adapter.Addr == nil && adapter.Cmd == nil {
 			panic(errors.New("Adapters must have an address or command to run"))
 		}
@@ -37,7 +38,8 @@ func New(path string) Config {
 			expanded := os.ExpandEnv(*adapter.Cmd)
 			adapter.Cmd = &expanded
 		}
-		config.Adapters[name] = adapter
+		adapter.ID = id
+		config.Adapters[id] = adapter
 	}
 	return config
 }

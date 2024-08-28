@@ -1,82 +1,94 @@
-package router
+package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-dap"
 	"github.com/raiguard/pesticide/adapter"
-	"github.com/raiguard/pesticide/message"
 )
 
-func (r *Router) handleDAPMessage(msg message.DapMsg) error {
-	a, ok := r.adapters[msg.Adapter]
-	if !ok {
-		return errors.New("Received message for nonexistent adapter")
+func (m *Model) handleAdapterMessage(msg adapter.Msg) tea.Cmd {
+	if msg.ID == "" || msg.Msg == nil {
+		return nil // The adapter was quit
 	}
-
+	var cmd tea.Cmd
+	a, ok := m.adapters[msg.ID]
+	if !ok {
+		cmd = tea.Println("Received message for nonexistent adapter")
+	}
 	switch msg := msg.Msg.(type) {
+	case dap.Message:
+		cmd = m.handleDAPMessage(a, msg)
+	case tea.Cmd:
+		cmd = msg
+	}
+	return tea.Batch(cmd, func() tea.Msg { return a.Receive() })
+}
+
+func (m *Model) handleDAPMessage(a *adapter.Adapter, msg dap.Message) tea.Cmd {
+	switch msg := msg.(type) {
 	case dap.ResponseMessage:
 		ctx, ok := a.PendingRequests[msg.GetResponse().RequestSeq]
 		if !ok {
-			return errors.New("Received a response to a non-existent request")
+			return tea.Println("Received a response to a non-existent request")
 		}
 		delete(a.PendingRequests, msg.GetResponse().RequestSeq)
 		// TODO: Handle error responses
 		switch msg := msg.(type) {
 		case *dap.InitializeResponse:
-			return r.onInitializeResponse(a, msg)
+			return m.onInitializeResponse(a, msg)
 		case *dap.StackTraceResponse:
-			return r.onStackTraceResponse(a, msg, ctx.(*dap.StackTraceRequest))
+			return m.onStackTraceResponse(a, msg, ctx.(*dap.StackTraceRequest))
 		case *dap.EvaluateResponse:
-			return r.onEvaluateResponse(msg)
+			return m.onEvaluateResponse(msg)
 		}
 	case dap.EventMessage:
 		switch msg := msg.(type) {
 		case *dap.ContinuedEvent:
 			a.State = adapter.Running
 		case *dap.InitializedEvent:
-			return r.onInitializedEvent(a, msg)
+			return m.onInitializedEvent(a, msg)
 		case *dap.TerminatedEvent:
 			a.Shutdown()
-			delete(r.adapters, a.ID)
-			if r.focusedAdapter == a {
-				r.focusedAdapter = nil
+			delete(m.adapters, a.ID)
+			if m.focusedAdapter == a {
+				m.focusedAdapter = nil
 				// TODO: Focus a different adapter? Decide on UX for this.
 			}
 		case *dap.StoppedEvent:
-			return r.onStoppedEvent(a, msg)
+			return m.onStoppedEvent(a, msg)
 		case *dap.OutputEvent:
-			return r.onOutputEvent(a, msg)
+			return m.onOutputEvent(a, msg)
 		}
 	}
 	return nil
 }
 
-func (r *Router) onInitializeResponse(a *adapter.Adapter, res *dap.InitializeResponse) error {
+func (m *Model) onInitializeResponse(a *adapter.Adapter, res *dap.InitializeResponse) tea.Cmd {
 	a.Capabilities = res.Body
 	a.Launch()
 	return nil
 }
 
-func (r *Router) onOutputEvent(a *adapter.Adapter, ev *dap.OutputEvent) error {
-	r.println(strings.TrimSpace(ev.Body.Output))
-	return nil
+func (m *Model) onOutputEvent(a *adapter.Adapter, ev *dap.OutputEvent) tea.Cmd {
+	return tea.Println(strings.TrimSpace(ev.Body.Output))
 }
 
-func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) error {
+func (m *Model) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) tea.Cmd {
 	a.State = adapter.Stopped
-	r.println(a.ID, " stopped: ", event.Body.Reason, ": ", event.Body.Text)
 	a.FocusedThread = event.Body.ThreadId
 	a.Send(&dap.StackTraceRequest{
 		Request:   a.NewRequest("stackTrace"),
 		Arguments: dap.StackTraceArguments{ThreadId: event.Body.ThreadId},
 	})
-	return nil
+	return tea.Println(a.ID, " stopped: ", event.Body.Reason, ": ", event.Body.Text)
 }
 
-// func (r *Router) sendPauseRequest() {
+// func (r *Model) sendPauseRequest() {
 // 	var threadId int
 // 	if len(r.threads) == 0 {
 // 		threadId = 1
@@ -91,9 +103,9 @@ func (r *Router) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) err
 // 	})
 // }
 
-func (r *Router) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent) error {
+func (m *Model) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent) tea.Cmd {
 	a.State = adapter.Running
-	r.sendSetBreakpointsRequest(a)
+	m.sendSetBreakpointsRequest(a)
 	if a.Capabilities.SupportsConfigurationDoneRequest {
 		a.Send(&dap.ConfigurationDoneRequest{
 			Request:   a.NewRequest("configurationDone"),
@@ -103,7 +115,7 @@ func (r *Router) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent
 	return nil
 }
 
-func (r *Router) sendSetBreakpointsRequest(a *adapter.Adapter) {
+func (m *Model) sendSetBreakpointsRequest(a *adapter.Adapter) {
 	for filename, breakpoints := range a.Breakpoints {
 		a.Send(&dap.SetBreakpointsRequest{
 			Request: a.NewRequest("setBreakpoints"),
@@ -118,37 +130,37 @@ func (r *Router) sendSetBreakpointsRequest(a *adapter.Adapter) {
 	}
 }
 
-func (r *Router) onStackTraceResponse(a *adapter.Adapter, res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) error {
+func (m *Model) onStackTraceResponse(a *adapter.Adapter, res *dap.StackTraceResponse, ctx *dap.StackTraceRequest) tea.Cmd {
 	a.StackFrames[ctx.Arguments.ThreadId] = res.Body.StackFrames
 	a.FocusedStackFrame = &a.StackFrames[ctx.Arguments.ThreadId][0]
-	return r.printFileLocation(a)
+	return m.printFileLocation(a)
 }
 
-func (r *Router) onEvaluateResponse(res *dap.EvaluateResponse) error {
-	r.println(res.Body.Result)
-	return nil
+func (m *Model) onEvaluateResponse(res *dap.EvaluateResponse) tea.Cmd {
+	return tea.Println(res.Body.Result)
 }
 
-func (r *Router) printFileLocation(a *adapter.Adapter) error {
+func (m *Model) printFileLocation(a *adapter.Adapter) tea.Cmd {
 	sf := a.FocusedStackFrame
 	if sf == nil {
-		return errors.New("No stack frame in context")
+		return tea.Println(errors.New("No stack frame in context"))
 	}
 	if sf.Source.SourceReference != 0 {
-		return errors.New("sourceReference is unimplemented")
+		return tea.Println(errors.New("sourceReference is unimplemented"))
 	}
 	path := sf.Source.Path
 	if path == "" {
-		return errors.New("Path is empty")
+		return tea.Println(errors.New("Path is empty"))
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return tea.Println(err)
 	}
 	lines := strings.Split(string(contents), "\n")
 	if len(lines)-1 < sf.Line {
-		return errors.New("Invalid line number")
+		return tea.Println(errors.New("Invalid line number"))
 	}
+	var output string
 	for i := sf.Line - 3; i < sf.Line+4; i++ {
 		if i < 0 || i > len(lines)-1 {
 			continue
@@ -157,12 +169,12 @@ func (r *Router) printFileLocation(a *adapter.Adapter) error {
 		if i == sf.Line-1 {
 			prefix = "->"
 		}
-		r.printf("%3s %3d: %s", prefix, i+1, lines[i])
+		output += fmt.Sprintf("%3s %3d: %s\n", prefix, i+1, lines[i])
 	}
-	return nil
+	return tea.Println(output)
 }
 
-// func (r *Router) travelStackFrame(delta int) {
+// func (r *Model) travelStackFrame(delta int) {
 // 	if r.focusedStackFrame == nil {
 // 		// ui.print("no stack frame is selected")
 // 		return
@@ -185,7 +197,7 @@ func (r *Router) printFileLocation(a *adapter.Adapter) error {
 // 	r.jumpInKak()
 // }
 
-// func (r *Router) jumpInKak() {
+// func (r *Model) jumpInKak() {
 // 	cmd := exec.Command("kak", "-p", "Krastorio2")
 // 	buffer := bytes.Buffer{}
 // 	if r.focusedStackFrame.Source.Path == "" {
