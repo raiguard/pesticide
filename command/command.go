@@ -23,8 +23,11 @@ type (
 	Down     int
 	Evaluate struct{ Expr string }
 	Launch   struct{ Name string }
+	Next     struct{}
 	Pause    struct{}
 	Quit     struct{}
+	Step     struct{}
+	StepOut  struct{}
 	Up       int
 )
 
@@ -34,8 +37,11 @@ func (c Continue) command()  {}
 func (d Down) command()      {}
 func (e Evaluate) command()  {}
 func (l Launch) command()    {}
+func (s Next) command()      {}
 func (p Pause) command()     {}
 func (q Quit) command()      {}
+func (s Step) command()      {}
+func (s StepOut) command()   {}
 func (u Up) command()        {}
 
 func Parse(input string) (Command, error) {
@@ -60,6 +66,12 @@ func Parse(input string) (Command, error) {
 		return Pause{}, nil
 	case "quit", "q":
 		return Quit{}, nil
+	case "step", "s":
+		return Step{}, nil
+	case "stepout", "finish", "fin":
+		return StepOut{}, nil
+	case "next", "n":
+		return Next{}, nil
 	case "up":
 		return Up(1), nil
 	default:

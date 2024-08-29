@@ -85,6 +85,9 @@ func (m *Model) onStoppedEvent(a *adapter.Adapter, event *dap.StoppedEvent) tea.
 		Request:   a.NewRequest("stackTrace"),
 		Arguments: dap.StackTraceArguments{ThreadId: event.Body.ThreadId},
 	})
+	if event.Body.Reason == "step" {
+		return nil
+	}
 	return tea.Println(a.ID, " stopped: ", event.Body.Reason, ": ", event.Body.Text)
 }
 

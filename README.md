@@ -42,14 +42,17 @@ Launch the `pesticide` executable and it will source the configuration file. You
 
 ### Current commands
 
-**NOTE:** A heavy rewrite is underway. This list represents all currently functioning commands at the time of writing.
+The project is usable, but is far from complete. Please open an issue if there is a capability or command that you are missing!
 
 - `backtrace`
 - `break <filename> <line>`
-- `evaluate <expression>`
-- `down`
+- `finish`
 - `continue`
+- `down`
+- `evaluate <expression>`
 - `launch <adapter name>`
+- `next`
 - `pause`
 - `quit`
+- `step`
 - `up`

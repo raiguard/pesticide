@@ -17,16 +17,22 @@ func (m *Model) handleCommand(cmd command.Command) tea.Cmd {
 		return m.handleBreakCommand(cmd)
 	case command.Continue:
 		return m.handleContinueCommand(cmd)
+	case command.Down:
+		return m.handleStackFrameCommand(-int(cmd))
 	case command.Evaluate:
 		return m.handleEvaluateCommand(cmd)
 	case command.Launch:
 		return m.handleLaunchCommand(cmd)
+	case command.Next:
+		return m.handleNextCommand(cmd)
 	case command.Pause:
 		return m.handlePauseCommand(cmd)
 	case command.Quit:
 		return m.handleQuitCommand(cmd)
-	case command.Down:
-		return m.handleStackFrameCommand(-int(cmd))
+	case command.Step:
+		return m.handleStepCommand(cmd)
+	case command.StepOut:
+		return m.handleStepOutCommand(cmd)
 	case command.Up:
 		return m.handleStackFrameCommand(int(cmd))
 	}
@@ -151,4 +157,40 @@ func (m *Model) handleStackFrameCommand(delta int) tea.Cmd {
 		return tea.Println("No adapter in focus")
 	}
 	return m.travelStackFrame(a, delta)
+}
+
+func (m *Model) handleStepCommand(cmd command.Step) tea.Cmd {
+	a := m.focusedAdapter
+	if a == nil {
+		return tea.Println("No adapter in focus")
+	}
+	a.Send(&dap.StepInRequest{
+		Request:   a.NewRequest("stepIn"),
+		Arguments: dap.StepInArguments{ThreadId: a.FocusedThread},
+	})
+	return nil
+}
+
+func (m *Model) handleStepOutCommand(cmd command.StepOut) tea.Cmd {
+	a := m.focusedAdapter
+	if a == nil {
+		return tea.Println("No adapter in focus")
+	}
+	a.Send(&dap.StepOutRequest{
+		Request:   a.NewRequest("stepOut"),
+		Arguments: dap.StepOutArguments{ThreadId: a.FocusedThread},
+	})
+	return nil
+}
+
+func (m *Model) handleNextCommand(cmd command.Next) tea.Cmd {
+	a := m.focusedAdapter
+	if a == nil {
+		return tea.Println("No adapter in focus")
+	}
+	a.Send(&dap.NextRequest{
+		Request:   a.NewRequest("next"),
+		Arguments: dap.NextArguments{ThreadId: a.FocusedThread},
+	})
+	return nil
 }

@@ -82,7 +82,6 @@ func New(config config.AdapterConfig) (*Adapter, error) {
 			time.Sleep(time.Millisecond * 500) // Give time for the cmd to init
 		}
 		conn, err := net.Dial("tcp", *config.Addr)
-		// TODO: Handle errors gracefully
 		if err != nil {
 			return nil, err
 		}
