@@ -1,13 +1,9 @@
 package ui
 
 import (
-	"log"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/raiguard/pesticide/adapter"
-	"github.com/raiguard/pesticide/command"
 	"github.com/raiguard/pesticide/config"
 )
 
@@ -16,23 +12,18 @@ type Model struct {
 	adapters       map[string]*adapter.Adapter
 	focusedAdapter *adapter.Adapter
 
-	commandHistory CommandHistory
-	textinput      textinput.Model
+	prompt prompt
 }
 
 func New(config config.Config) *tea.Program {
 	return tea.NewProgram(&Model{
-		config:         config,
-		adapters:       map[string]*adapter.Adapter{},
-		commandHistory: CommandHistory{},
-		textinput:      textinput.Model{},
+		config:   config,
+		adapters: map[string]*adapter.Adapter{},
 	})
 }
 
 func (m *Model) Init() tea.Cmd {
-	m.textinput = textinput.New()
-	m.textinput.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render("(pesticide) ")
-	m.textinput.Focus()
+	m.prompt.Init()
 	return tea.Batch(textinput.Blink, tea.Println("Type a command and press <ret> to submit"))
 }
 
@@ -43,36 +34,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlD:
 			return m, tea.Quit // Escape hatch for development
-		case tea.KeyCtrlC:
-			m.textinput.SetValue("")
-		case tea.KeyEnter:
-			input := m.textinput.Value()
-			cmds = append(cmds, tea.Println(m.textinput.Prompt, input))
-			m.textinput.SetValue("")
-			m.commandHistory.Append(input)
-			cmd, err := command.Parse(input)
-			if err != nil {
-				cmds = append(cmds, tea.Println(err))
-				break
-			}
-			log.Printf("Command: %s", input)
-			cmds = append(cmds, m.handleCommand(cmd))
-		case tea.KeyUp:
-			m.commandHistory.Up()
-			m.textinput.SetValue(m.commandHistory.Get())
-			m.textinput.SetCursor(999)
-		case tea.KeyDown:
-			m.commandHistory.Down()
-			m.textinput.SetValue(m.commandHistory.Get())
-			m.textinput.SetCursor(999)
 		}
 	case adapter.Msg:
 		cmds = append(cmds, m.handleAdapterMessage(msg))
 	}
-	var cmd tea.Cmd
-	m.textinput, cmd = m.textinput.Update(msg)
+	cmd := m.prompt.Update(msg, &cmds)
 	if cmd != nil {
-		cmds = append(cmds, cmd)
+		cmds = append(cmds, m.handleCommand(cmd))
 	}
 
 	// Bubbletea does not validate sequence commands, so we must do it ourselves to avoid high CPU usage.
@@ -94,5 +62,5 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	return m.textinput.View()
+	return m.prompt.View()
 }
