@@ -97,7 +97,7 @@ func (m *Model) onInitializedEvent(a *adapter.Adapter, ev *dap.InitializedEvent)
 	if a.Capabilities.SupportsConfigurationDoneRequest {
 		a.Send(&dap.ConfigurationDoneRequest{
 			Request:   a.NewRequest("configurationDone"),
-			Arguments: dap.ConfigurationDoneArguments{},
+			Arguments: &dap.ConfigurationDoneArguments{},
 		})
 	}
 	return nil

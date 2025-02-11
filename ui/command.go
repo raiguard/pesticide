@@ -142,7 +142,7 @@ func (m *Model) handleQuitCommand(cmd command.Quit) tea.Cmd {
 	} else {
 		a.Send(&dap.DisconnectRequest{
 			Request: a.NewRequest("disconnect"),
-			Arguments: dap.DisconnectArguments{
+			Arguments: &dap.DisconnectArguments{
 				TerminateDebuggee: true,
 			},
 		})

@@ -1,12 +1,5 @@
 {
   "adapters": {
-    "factorio-1.1": {
-      "cmd": "env SDL_VIDEODRIVER=wayland fmtk debug /home/rai/games/factorio/bin/x64/factorio",
-      "args": {
-        "hookControl": true,
-        "modsPath": "/home/rai/games/factorio/mods"
-      }
-    },
     "factorio-2.0": {
       "cmd": "fmtk debug --docs ../../../scripts/lua_doc/doc-files/runtime-api.json /home/rai/dev/wube/factorio/bin/fetched/factorio",
       "args": {
