@@ -21,12 +21,10 @@ func (p *prompt) Init() {
 }
 
 func (p *prompt) Update(msg tea.Msg, cmds *[]tea.Cmd) command.Command {
-	{
-		var cmd tea.Cmd
-		p.textinput, cmd = p.textinput.Update(msg)
-		if cmd != nil {
-			*cmds = append(*cmds, cmd)
-		}
+	var cmd tea.Cmd
+	p.textinput, cmd = p.textinput.Update(msg)
+	if cmd != nil {
+		*cmds = append(*cmds, cmd)
 	}
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -47,11 +45,11 @@ func (p *prompt) Update(msg tea.Msg, cmds *[]tea.Cmd) command.Command {
 		}
 		log.Printf("Command: %s", input)
 		return cmd
-	case tea.KeyUp:
+	case tea.KeyUp, tea.KeyCtrlP:
 		p.commandHistory.Up()
 		p.textinput.SetValue(p.commandHistory.Get())
 		p.textinput.SetCursor(999)
-	case tea.KeyDown:
+	case tea.KeyDown, tea.KeyCtrlN:
 		p.commandHistory.Down()
 		p.textinput.SetValue(p.commandHistory.Get())
 		p.textinput.SetCursor(999)
