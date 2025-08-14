@@ -1,3 +1,5 @@
+# ⚠️ This project has migrated to [Codeberg](https://codeberg.org/raiguard/pesticide).
+
 # Pesticide
 
 A command-line UI for debuggers based on the [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/).
