@@ -67,6 +67,7 @@ func New(config config.AdapterConfig) (*Adapter, error) {
 		if err != nil {
 			return nil, err
 		}
+		// TODO: Hook stderr and show in the UI
 		err = child.Start()
 		if err != nil {
 			return nil, err
